@@ -1,301 +1,754 @@
-// --- Global Configuration ---
-// IMPORTANT: Replace these placeholders with your actual Folder ID and Spreadsheet ID.
-const SPREADSHEET_ID = "1cJx3XWKjLfJWjk7ppZyALql2KTQBt-Q9HiqMRBL7c-Y";
-const DRIVE_FOLDER_ID = "1AFOI4DlLYHYQTzSx5Hj2AjLSpHYBoCoq";
-const LOG_SHEET_NAME = "Log";
-const DROPDOWN_SHEET_NAME = "Dropdown";
+/**
+ * This script provides the backend logic for the workflow management web app.
+ */
+
+// --- GLOBAL VARIABLES ---
+const SPREADSHEET_ID = '1eGz-j_zDo4uA2TW3HXPaTvjC9MTuzNhIFMXTtlXWx-0';
+const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+let usersSheet = ss.getSheetByName('Users');
+let transactionsSheet = ss.getSheetByName('Transactions');
+let transactionHistorySheet = ss.getSheetByName('TransactionHistory'); // MODIFIED
+let activityLogSheet = ss.getSheetByName('ActivityLog'); // MODIFIED
+let dropdownsSheet = ss.getSheetByName('Dropdowns');
+let granteeDataSheet = ss.getSheetByName('GranteeData');
+
 
 /**
- * @description Serves the main web page.
- * This function is the entry point for the web app.
+ * A robust setup function to create, verify, and repair all required sheets and headers.
+ * Run this function manually from the Apps Script Editor to prepare or fix your spreadsheet.
+ * How to run:
+ * 1. Open the Apps Script editor.
+ * 2. Select "setupSpreadsheet" from the function dropdown list above.
+ * 3. Click "Run".
+ * 4. A summary of actions will appear.
  */
-function doGet(e) {
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
-    .setTitle('Staff Time-In')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+function setupSpreadsheet() {
+  const sheetConfigs = {
+    'Transactions': ['TRANSACTION_ID', 'BATCH_NO', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO', 'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE', 'OLD_VALUE', 'NEW_VALUE', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'],
+    'Users': ['EmailAddress', 'Password', 'FullName', 'Role', 'AreaName', 'ApprovalStatus', 'UserCode'],
+    'ActivityLog': ['LOG_ID', 'TIMESTAMP', 'USER_EMAIL', 'ACTION_TYPE', 'DETAILS'],
+    'TransactionHistory': ['HISTORY_ID', 'TRANSACTION_ID', 'TIMESTAMP', 'USER_EMAIL', 'PREVIOUS_STATUS', 'NEW_STATUS', 'REMARKS'],
+    'Dropdowns': ['CaseManagers', 'UpdateTypes', 'FieldToUpdateTemplate', 'OldValueTemplate', 'NewValueTemplate', 'StatusOptions', 'Roles', 'ViewTypes'],
+    'GranteeData': ['HH_ID', 'GranteeFullName', 'EntryID', 'MemberFullName']
+  };
+
+  const sheetNames = Object.keys(sheetConfigs);
+  let summaryLog = ['Spreadsheet Setup Summary:'];
+
+  // Ensure TransactionHistory and ActivityLog exist before attempting to delete the old Log sheet
+  if (!ss.getSheetByName('TransactionHistory')) {
+      ss.insertSheet('TransactionHistory');
+  }
+  if (!ss.getSheetByName('ActivityLog')) {
+      ss.insertSheet('ActivityLog');
+  }
+
+  // Clean up the old "Log" sheet if it exists
+  const oldLogSheet = ss.getSheetByName('Log');
+  if (oldLogSheet) {
+    ss.deleteSheet(oldLogSheet);
+    summaryLog.push(`- REMOVED old 'Log' sheet.`);
+  }
+
+  sheetNames.forEach(sheetName => {
+    let sheet = ss.getSheetByName(sheetName);
+    const headers = sheetConfigs[sheetName];
+
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      summaryLog.push(`- CREATED new sheet: '${sheetName}'.`);
+      sheet.appendRow(headers);
+      sheet.setFrozenRows(1);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+      summaryLog.push(`- ADDED headers to new sheet: '${sheetName}'.`);
+    } else {
+      // MODIFIED LOGIC: Handle sheets that exist but might be empty.
+      const lastCol = sheet.getLastColumn();
+      if (lastCol === 0) {
+        // This case handles a sheet that exists but is completely blank.
+        sheet.appendRow(headers);
+        sheet.setFrozenRows(1);
+        sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+        summaryLog.push(`- POPULATED empty sheet: '${sheetName}' with headers.`);
+      } else {
+        // This case handles a sheet that has content, so we check the headers.
+        const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const headersMatch = headers.length === currentHeaders.length && headers.every((value, index) => value === currentHeaders[index]);
+
+        if (headersMatch) {
+          summaryLog.push(`- OK: Sheet '${sheetName}' headers are correct.`);
+        } else {
+          sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+          sheet.setFrozenRows(1);
+          sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
+          summaryLog.push(`- REPAIRED: Headers for sheet '${sheetName}' were incorrect and have been fixed.`);
+        }
+      }
+    }
+  });
+
+  // Re-initialize all sheet variables to ensure they are correct
+  usersSheet = ss.getSheetByName('Users');
+  transactionsSheet = ss.getSheetByName('Transactions');
+  transactionHistorySheet = ss.getSheetByName('TransactionHistory');
+  activityLogSheet = ss.getSheetByName('ActivityLog');
+  dropdownsSheet = ss.getSheetByName('Dropdowns');
+  granteeDataSheet = ss.getSheetByName('GranteeData');
+  
+  summaryLog.push('\nSetup process finished. Please run this again if you encounter header-related errors.');
+  Logger.log(summaryLog.join('\n'));
+  Browser.msgBox(summaryLog.join('\n'));
 }
 
 /**
- * @description Includes other HTML files into the main template.
- * This allows us to keep our CSS separate.
- * @param {string} filename The name of the file to include.
- * @returns {string} The raw content of the file.
+ * Creates the first administrative user. Run this AFTER running setupSpreadsheet.
  */
+function setupInitialUser() {
+  const email = "your_email@example.com"; // <-- IMPORTANT: CHANGE THIS
+  const password = "your_strong_password"; // <-- IMPORTANT: CHANGE THIS
+  const fullName = "Admin User";
+  const role = "BDM Team";
+  const areaName = "HQ";
+  
+  const users = usersSheet.getDataRange().getValues();
+  const userExists = users.some(row => row[0].toLowerCase() === email.toLowerCase());
+  
+  if (userExists) {
+    Logger.log('User with this email already exists.');
+    return;
+  }
+  
+  usersSheet.appendRow([email, password, fullName, role, areaName, 'Approved']);
+  Logger.log('Initial user created successfully. Email: ' + email);
+}
+
+
+// --- WEB APP ENTRY POINT ---
+
+function doGet() {
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('Workflow Management App')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+}
+
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-/**
- * @description Fetches the list of staff names from the Google Sheet.
- * This function is called by the client-side JavaScript to populate the dropdown.
- * @returns {string[]} An array of staff names.
- */
-function getStaffNames() {
-  try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DROPDOWN_SHEET_NAME);
-    // Assumes names are in the first column (A), starting from row 2
-    const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1);
-    const names = range.getValues().flat().filter(String); // .flat() converts 2D array to 1D, .filter(String) removes empty rows
-    return names;
-  } catch (error) {
-    Logger.log("Error in getStaffNames: " + error.message);
-    return []; // Return an empty array on error
-  }
-}
+
+// --- USER AUTHENTICATION & DATA ---
 
 /**
- * @description Fetches the list of work statuses from the Google Sheet.
- * @returns {string[]} An array of work status options.
+ * Creates a new user with 'Pending' status.
+ * @param {object} userData Object with email, password, fullName, areaName.
+ * @returns {object} A result object with success status and message.
  */
-function getWorkStatuses() {
+function createNewUser(userData) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DROPDOWN_SHEET_NAME);
-    // Assumes statuses are in the second column (B), starting from row 2
-    const range = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1);
-    const statuses = range.getValues().flat().filter(String);
-    return statuses;
-  } catch (error) {
-    Logger.log("Error in getWorkStatuses: " + error.message);
-    return [];
-  }
-}
-
-/**
- * @description Processes the user's log-in data. Saves selfie/location for full logs and only status for simple logs.
- * @param {object} data The data object sent from the client-side. It may or may not contain image and location data.
- * @returns {object} A success or error object.
- */
-function logUserData(data) {
-  try {
-    const timestamp = new Date();
-    const logSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
-
-    // Check if this is a "full" log with image and location data
-    if (data.imageData && data.latitude !== undefined && data.longitude !== undefined) {
-      // --- Logic for "At Work Station" and "With TR" ---
-
-      // 1. Decode the Base64 image data and create a file
-      const decodedImage = Utilities.base64Decode(data.imageData.split(',')[1]);
-      const blob = Utilities.newBlob(decodedImage, 'image/jpeg', `${data.staffName}_${timestamp.toISOString()}.jpg`);
-      const folder = DriveApp.getFolderById(DRIVE_FOLDER_ID);
-      const file = folder.createFile(blob);
-      const fileUrl = file.getUrl();
-
-      // 2. Get human-readable address from coordinates
-      const address = getReadableAddress(data.latitude, data.longitude);
-
-      // 3. Create the Google Maps link from coordinates
-      const gmapLink = `https://www.google.com/maps?q=${data.latitude},${data.longitude}`;
-
-      // 4. Append the full log to the Google Sheet
-      logSheet.appendRow([
-        timestamp,
-        data.staffName,
-        fileUrl,
-        `${data.latitude}, ${data.longitude}`,
-        address,
-        gmapLink,
-        data.purpose,
-        data.workStatus
-      ]);
-
-      // 5. Return the full success object for the receipt
-      return {
-        success: true,
-        message: "Log-in successful! Data recorded.",
-        timestamp: timestamp.toISOString(),
-        address: address,
-        purpose: data.purpose,
-        workStatus: data.workStatus
-      };
-
-    } else {
-      // --- Logic for Leave, Absent, etc. ---
-
-      // 1. Append a row with only the available data. Other columns are left blank.
-      logSheet.appendRow([
-        timestamp,
-        data.staffName,
-        "", // Selfie Link
-        "", // GeoTag Location
-        "", // Location Name
-        "", // Location Link
-        "", // Purpose
-        data.workStatus
-      ]);
-
-      // 2. Return a simpler success object for the receipt
-      return {
-        success: true,
-        message: "Status successfully recorded.",
-        timestamp: timestamp.toISOString(),
-        workStatus: data.workStatus
-        // No address or purpose is returned as they were not provided.
-      };
+    const users = usersSheet.getDataRange().getValues();
+    const emailExists = users.some(row => row[0].toLowerCase() === userData.email.toLowerCase());
+    if (emailExists) {
+      return { success: false, message: 'An account with this email already exists.' };
     }
-
-  } catch (error) {
-    Logger.log("Error in logUserData: " + error.toString());
-    return {
-      success: false,
-      message: "Error: Could not save data. " + error.toString()
-    };
-  }
-}
-
-/**
- * @description Converts latitude and longitude into a human-readable address.
- * Uses Google's Maps service for reverse geocoding.
- * @param {number} lat The latitude.
- * @param {number} lon The longitude.
- * @returns {string} The formatted address, or an error message.
- */
-function getReadableAddress(lat, lon) {
-  if (!lat || !lon) {
-    return "No location provided";
-  }
-  try {
-    // This uses the built-in Maps service in Apps Script
-    const response = Maps.newGeocoder().reverseGeocode(lat, lon);
-    if (response && response.results && response.results.length > 0) {
-      // The first result is usually the most specific one.
-      return response.results[0].formatted_address;
-    }
-    return "Address not found";
-  } catch (error) {
-    Logger.log("Error in getReadableAddress: " + error.message);
-    return "Could not retrieve address";
-  }
-}
-
-/**
- * ONE-TIME-USE FUNCTION: This function scans the 'Log' sheet and backfills the 
- * 'Location Link' for any old entries that are missing it.
- * To use: Select 'backfillLocationLinks' from the function list in the Apps Script
- * editor and click 'Run'.
- */
-function backfillLocationLinks() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
-  if (!sheet) {
-    // This message will appear in a popup in the script editor.
-    Browser.msgBox("Error", "The 'Log' sheet could not be found. Please check the LOG_SHEET_NAME variable.", Browser.Buttons.OK);
-    return;
-  }
-
-  const range = sheet.getDataRange();
-  const values = range.getValues();
-
-  // Get the headers to find the correct columns dynamically. This is safer than using fixed numbers.
-  const headers = values[0];
-  const geoTagColIndex = headers.indexOf("GeoTag Location"); // Should be column D
-  const locationLinkColIndex = headers.indexOf("Location Link"); // Should be column F
-
-  if (geoTagColIndex === -1 || locationLinkColIndex === -1) {
-    Browser.msgBox("Error", "Could not find the 'GeoTag Location' or 'Location Link' headers in your sheet.", Browser.Buttons.OK);
-    return;
-  }
-
-  let updatedCount = 0;
-  // Loop through all data rows, starting at index 1 to skip the header row.
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    const geoTagData = row[geoTagColIndex];
-    const locationLinkData = row[locationLinkColIndex];
-
-    // Check if a GeoTag exists but the Location Link is empty.
-    if (geoTagData && !locationLinkData) {
-      // If so, create the link and add it to our data array.
-      values[i][locationLinkColIndex] = `https://www.google.com/maps?q=${geoTagData}`;
-      updatedCount++;
-    }
-  }
-
-  // If we found any rows to update, write the entire modified data array back to the sheet.
-  // This is much more efficient than updating one cell at a time.
-  if (updatedCount > 0) {
-    range.setValues(values);
-    Browser.msgBox("Success", `Operation complete. Updated ${updatedCount} rows with new location links.`, Browser.Buttons.OK);
-  } else {
-    Browser.msgBox("Info", "No rows required updating. All entries already have a location link.", Browser.Buttons.OK);
-  }
-}
-
-// --- NEW FUNCTIONS FOR LOCATOR BOARD ---
-
-
-
-/**
- * @description Fetches and processes data for the Locator Board for a specific date.
- * This version uses a robust string-based date comparison to avoid timezone issues.
- * @param {string} dateString The date in YYYY-MM-DD format.
- * @returns {Array<object>} An array of objects, each representing a staff member's status.
- */
-function getLocatorData(dateString) {
-  try {
-    // This is the target date string from the UI, e.g., "2025-07-10"
-    const targetDateString = dateString; 
-
-    const allStaffNames = getStaffNames();
-    const logSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(LOG_SHEET_NAME);
-    const logData = logSheet.getDataRange().getValues();
-    const headers = logData.shift();
-
-    const headerMap = {
-      tsIndex: headers.indexOf("Timestamp"),
-      nameIndex: headers.indexOf("Staff Name"),
-      selfieIndex: headers.indexOf("Selfie Link"),
-      addressIndex: headers.indexOf("Location Name"),
-      mapLinkIndex: headers.indexOf("Location Link"),
-      purposeIndex: headers.indexOf("Purpose"),
-      statusIndex: headers.indexOf("Work Status")
-    };
     
-    const missingHeaders = Object.keys(headerMap).filter(key => headerMap[key] === -1);
-    if (missingHeaders.length > 0) {
-      const nameMap = { tsIndex: "Timestamp", nameIndex: "Staff Name", selfieIndex: "Selfie Link", addressIndex: "Location Name", mapLinkIndex: "Location Link", purposeIndex: "Purpose", statusIndex: "Work Status" };
-      const missingHeaderNames = missingHeaders.map(key => `"${nameMap[key]}"`);
-      throw new Error(`The 'Log' sheet is missing or has misspelled columns: ${missingHeaderNames.join(', ')}. Please check the sheet.`);
-    }
+    // Add new user with the selected role and 'Pending' status
+    usersSheet.appendRow([
+      userData.email,
+      userData.password,
+      userData.fullName,
+      userData.role, // Use the role from the form
+      userData.areaName,
+      'Pending'     // Initial status
+    ]);
 
-    const loggedInStaff = new Map();
+    logActivity_('USER_REGISTRATION', `New user registered: ${userData.email} with role ${userData.role}. Awaiting approval.`);
+    return { success: true, message: 'Registration successful! Your account is pending approval.' };
+  } catch (e) {
+    Logger.log(`Error in createNewUser: ${e}`);
+    return { success: false, message: 'An unexpected error occurred.' };
+  }
+}
 
-    for (const row of logData) {
-      // Create a Date object from the spreadsheet timestamp
-      const timestamp = new Date(row[headerMap.tsIndex]);
-      
-      // **THE KEY FIX**: Convert the log's timestamp to a "YYYY-MM-DD" string in the correct timezone.
-      const logDateString = Utilities.formatDate(timestamp, "Asia/Manila", "yyyy-MM-dd");
 
-      // Now compare the simple strings. This is 100% reliable.
-      if (logDateString === targetDateString) {
-        const staffName = row[headerMap.nameIndex];
-        if (!loggedInStaff.has(staffName)) {
-          loggedInStaff.set(staffName, {
-            staffName: staffName,
-            time: timestamp.toISOString(),
-            workStatus: row[headerMap.statusIndex],
-            purpose: row[headerMap.purposeIndex],
-            selfieUrl: row[headerMap.selfieIndex],
-            locationName: row[headerMap.addressIndex],
-            locationLink: row[headerMap.mapLinkIndex]
-          });
+/**
+ * Verifies user credentials against the 'Users' sheet.
+ * @param {string} email The user's email.
+ * @param {string} password The user's password.
+ * @returns {object|null} The user object if credentials are valid, otherwise null with a reason.
+ */
+function verifyUser(email, password) {
+  try {
+    const roleMapping = getRoleViewMapping_(); // Get the role-to-view mapping
+    const usersData = usersSheet.getDataRange().getValues();
+    const headers = usersData[0];
+    const userCodeIndex = headers.indexOf('UserCode');
+    const roleIndex = headers.indexOf('Role');
+
+    for (let i = 1; i < usersData.length; i++) {
+      const row = usersData[i];
+      if (row[0].toLowerCase() === email.toLowerCase() && row[1] === password) {
+        if (row[5] === 'Approved') {
+          const userRole = row[roleIndex];
+          // Determine the viewType based on the mapping, with a safe default
+          const viewType = roleMapping[userRole] || 'BDM_view'; 
+
+          logActivity_('USER_LOGIN', `User ${email} logged in successfully.`);
+          return { 
+            status: 'SUCCESS',
+            user: {
+              email: row[0],
+              fullName: row[2],
+              role: userRole,
+              areaName: row[4],
+              userCode: userCodeIndex !== -1 ? row[userCodeIndex] : null,
+              viewType: viewType // Pass the determined view type to the client
+            }
+          };
+        } else {
+          return { status: 'PENDING_APPROVAL', user: null };
         }
       }
     }
+    return { status: 'INVALID_CREDENTIALS', user: null };
+  } catch (e) {
+    Logger.log(`Error in verifyUser: ${e}`);
+    return { status: 'ERROR', user: null };
+  }
+}
 
-    const results = allStaffNames.map(name => {
-      if (loggedInStaff.has(name)) {
-        return loggedInStaff.get(name);
-      } else {
-        return { staffName: name, noLog: true };
+function getDropdownOptions() {
+  const data = dropdownsSheet.getDataRange().getValues();
+  const headers = data.shift(); // Get headers
+
+  // Find column indices
+  const caseManagerIndex = headers.indexOf('CaseManagers');
+  const updateTypeIndex = headers.indexOf('UpdateTypes');
+  const fieldTemplateIndex = headers.indexOf('FieldToUpdateTemplate');
+  const oldTemplateIndex = headers.indexOf('OldValueTemplate');
+  const newTemplateIndex = headers.indexOf('NewValueTemplate');
+  const statusOptionsIndex = headers.indexOf('StatusOptions');
+  const rolesIndex = headers.indexOf('Roles');
+
+  const options = {
+    updateTypeTemplates: [],
+    statusOptions: [],
+    caseManagers: [],
+    roleOptions: [] // New array for roles
+  };
+
+  data.forEach(row => {
+    // Populate Update Type templates
+    const updateType = row[updateTypeIndex];
+    if (updateType && String(updateType).trim() !== '') {
+      options.updateTypeTemplates.push({
+        updateType: updateType,
+        fieldTemplate: row[fieldTemplateIndex] || '',
+        oldValueTemplate: row[oldTemplateIndex] || '',
+        newValueTemplate: row[newTemplateIndex] || ''
+      });
+    }
+
+    // Populate Status Options
+    const statusOption = row[statusOptionsIndex];
+    if (statusOption && String(statusOption).trim() !== '') {
+      options.statusOptions.push(statusOption);
+    }
+
+    // Populate Case Managers
+    const caseManager = row[caseManagerIndex];
+    if (caseManager && String(caseManager).trim() !== '') {
+      options.caseManagers.push(caseManager);
+    }
+    
+    // Populate Role Options
+    const roleOption = row[rolesIndex];
+    if (roleOption && String(roleOption).trim() !== '') {
+      options.roleOptions.push(roleOption);
+    }
+  });
+
+  return options;
+}
+
+/**
+ * Fetches the Grantee Name and a list of all household members for a given HH_ID.
+ * @param {string} hhId The Household ID to look up.
+ * @returns {object} An object containing the granteeName and an array of member objects.
+ */
+function getHouseholdData(hhId) {
+  try {
+    const data = granteeDataSheet.getDataRange().getValues();
+    const headers = data.shift(); // Remove headers to work with indices
+    
+    const hhIdIndex = headers.indexOf('HH_ID');
+    const granteeNameIndex = headers.indexOf('GranteeFullName');
+    const entryIdIndex = headers.indexOf('EntryID');
+    const memberNameIndex = headers.indexOf('MemberFullName');
+
+    let granteeName = null;
+    const members = [];
+
+    data.forEach(row => {
+      if (row[hhIdIndex] && row[hhIdIndex].toString() === hhId.toString()) {
+        // The first time we find the HH_ID, we grab the main grantee name.
+        if (!granteeName) {
+          granteeName = row[granteeNameIndex];
+        }
+        // We collect every member associated with this HH_ID.
+        if (row[entryIdIndex] && row[memberNameIndex]) {
+          members.push({
+            entryId: row[entryIdIndex],
+            memberName: row[memberNameIndex]
+          });
+        }
       }
     });
 
-    return results;
-
-  } catch (error) {
-    Logger.log("Error in getLocatorData: " + error.toString());
-    throw new Error("Could not retrieve locator data. " + error.message);
+    return { granteeName, members };
+  } catch (e) {
+    Logger.log(`Error in getHouseholdData: ${e}`);
+    return { granteeName: null, members: [] };
   }
+}
+
+// --- ADMIN FUNCTIONS ---
+
+/**
+ * Fetches all users for the admin management page. Excludes passwords.
+ * @param {object} userInfo The logged-in user's information.
+ * @returns {Array<object>} A list of user objects.
+ */
+function getUsersForAdmin(userInfo) {
+  // Use the new viewType for a robust security check
+  if (userInfo.viewType !== 'Admin_view') {
+    throw new Error('Access denied. Admin role required.');
+  }
+
+  const usersData = usersSheet.getDataRange().getValues();
+  const headers = usersData.shift(); // Remove header row
+
+  const emailIndex = headers.indexOf('EmailAddress');
+  const nameIndex = headers.indexOf('FullName');
+  const roleIndex = headers.indexOf('Role');
+  const areaIndex = headers.indexOf('AreaName');
+  const statusIndex = headers.indexOf('ApprovalStatus');
+  const userCodeIndex = headers.indexOf('UserCode');
+
+  const users = usersData.map(row => ({
+    email: row[emailIndex],
+    fullName: row[nameIndex],
+    role: row[roleIndex],
+    areaName: row[areaIndex],
+    approvalStatus: row[statusIndex],
+    userCode: userCodeIndex !== -1 ? row[userCodeIndex] : ''
+  }));
+
+  return users;
+}
+
+/**
+ * Updates a user's details, such as approval status and user code, with duplicate code validation.
+ * @param {string} userEmail The email of the user to update.
+ * @param {object} details An object containing details to update, e.g., { newStatus: 'Approved', userCode: 'JDC' }.
+ * @param {object} adminInfo The admin user performing the action.
+ * @returns {object} A success or failure message.
+ */
+function updateUserDetailsByAdmin(userEmail, details, adminInfo) {
+  // Use the new viewType for a robust security check
+  if (adminInfo.viewType !== 'Admin_view') {
+    throw new Error('Access denied. Admin role required.');
+  }
+
+  const usersData = usersSheet.getDataRange().getValues();
+  const headers = usersData[0];
+  const emailColIndex = headers.indexOf('EmailAddress');
+  const statusColIndex = headers.indexOf('ApprovalStatus');
+  const userCodeColIndex = headers.indexOf('UserCode');
+
+  if (userCodeColIndex === -1) {
+    throw new Error('UserCode column not found in Users sheet. Please run setup.');
+  }
+
+  // --- Duplicate UserCode Check ---
+  if (details.hasOwnProperty('userCode') && details.userCode) {
+    const codeToCheck = details.userCode.trim().toUpperCase();
+    
+    for (let i = 1; i < usersData.length; i++) {
+      const existingCode = usersData[i][userCodeColIndex];
+      const existingEmail = usersData[i][emailColIndex];
+      
+      if (existingCode && existingCode.toUpperCase() === codeToCheck && existingEmail.toLowerCase() !== userEmail.toLowerCase()) {
+        return { success: false, message: `User Code '${codeToCheck}' is already assigned to another user. Please choose a different one.` };
+      }
+    }
+  }
+
+  // Find the user and update their details.
+  for (let i = 1; i < usersData.length; i++) {
+    if (usersData[i][emailColIndex].toLowerCase() === userEmail.toLowerCase()) {
+      const rowToUpdate = i + 1; // 1-based index
+      let logParts = [`Admin ${adminInfo.email} updated user ${userEmail}.`];
+
+      if (details.newStatus && ['Approved', 'Rejected', 'Pending'].includes(details.newStatus)) {
+        usersSheet.getRange(rowToUpdate, statusColIndex + 1).setValue(details.newStatus);
+        logParts.push(`Status set to '${details.newStatus}'.`);
+      }
+      
+      if (details.hasOwnProperty('userCode')) {
+        usersSheet.getRange(rowToUpdate, userCodeColIndex + 1).setValue(details.userCode);
+        logParts.push(`UserCode set to '${details.userCode}'.`);
+      }
+
+      logActivity_('USER_DETAILS_UPDATE', logParts.join(' '));
+      return { success: true, message: `User ${userEmail} details have been updated.` };
+    }
+  }
+  throw new Error('User not found.');
+}
+
+// --- TRANSACTION LOGIC ---
+
+/**
+ * Generates a new, unique Batch Number based on the specified format.
+ * Format: {UserCode}-{Y}{HexMonth}{DD}{Sequence}
+ * @param {object} userInfo The logged-in user's information, must contain a `userCode`.
+ * @returns {string} The newly generated Batch Number.
+ */
+function generateNewBatchNo(userInfo) {
+  if (!userInfo || !userInfo.userCode) {
+    throw new Error("User Code not found for your account. Cannot generate a Batch No. Please contact an administrator.");
+  }
+  
+  const userCode = userInfo.userCode;
+  const today = new Date();
+  
+  const year = today.getFullYear().toString().slice(-1);
+  const month = (today.getMonth() + 1).toString(16).toUpperCase();
+  const day = today.getDate().toString().padStart(2, '0');
+  
+  const datePart = `${year}${month}${day}`;
+  const batchPrefix = `${userCode}-${datePart}`;
+  
+  const lastRow = transactionsSheet.getLastRow();
+  if (lastRow < 2) { // No transactions yet
+    return `${batchPrefix}A`;
+  }
+
+  const batchNoColumn = transactionsSheet.getRange(2, 2, lastRow - 1, 1).getValues().flat();
+  const todaysBatches = batchNoColumn.filter(b => b && b.toString().startsWith(batchPrefix));
+  
+  if (todaysBatches.length === 0) {
+    return `${batchPrefix}A`;
+  }
+
+  let maxSeqChar = '@'; // ASCII character before 'A'
+  todaysBatches.forEach(b => {
+    const seqChar = b.slice(-1);
+    if (seqChar > maxSeqChar) {
+      maxSeqChar = seqChar;
+    }
+  });
+  
+  const newSeqChar = String.fromCharCode(maxSeqChar.charCodeAt(0) + 1);
+  
+  return `${batchPrefix}${newSeqChar}`;
+}
+
+/**
+ * Creates a batch of new transactions.
+ * @param {object} batchData An object containing the batchNo and an array of transaction objects.
+ * @param {object} userInfo The logged-in user's information.
+ * @returns {string} The batch number if successful.
+ */
+function createTransactionsBatch(batchData, userInfo) {
+  try {
+    const { batchNo, transactions } = batchData;
+    if (!batchNo || !transactions || transactions.length === 0) {
+      throw new Error('Invalid batch data received.');
+    }
+
+    const timestamp = new Date();
+    const rowsToAdd = [];
+    const userEmail = userInfo.email;
+
+    transactions.forEach(data => {
+      if (!data.transactionId || !data.hhId) {
+        return; 
+      }
+      
+      const newRow = [
+        data.transactionId,        // TRANSACTION_ID
+        batchNo,                   // BATCH_NO
+        timestamp,                 // DATE_SUBMITTED
+        userInfo.fullName,         // SUBMITTED_BY
+        data.hhId,                 // HH_ID_NO
+        data.granteeName,          // GRANTEE_NAME
+        data.entryId,              // ENTRY_ID_NO
+        data.memberName,           // MEMBER_NAME
+        userInfo.fullName,         // CASE_MANAGER
+        data.updateType,           // UPDATE_TYPE
+        data.requirementsStatus,   // REQUIREMENTS_STATUS
+        data.requirementsNotes,    // REQUIREMENTS_NOTES
+        data.validationLink,       // VALIDATION_LINK
+        data.fieldToUpdate,        // FIELD_TO_UPDATE
+        data.oldValue,             // OLD_VALUE
+        data.newValue,             // NEW_VALUE
+        'Submitted',               // CURRENT_STATUS
+        '',                        // STATUS_CHANGED_BY
+        '',                        // DATE_STATUS_CHANGED
+        ''                         // REMARKS
+      ];
+      rowsToAdd.push(newRow);
+
+      // Log the initial status in the new history sheet
+      logTransactionHistory_(data.transactionId, userEmail, 'Created', 'Submitted', 'Initial submission.');
+    });
+
+    if (rowsToAdd.length > 0) {
+      transactionsSheet.getRange(transactionsSheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length)
+                     .setValues(rowsToAdd);
+      
+      const logDetails = `${rowsToAdd.length} transactions created in batch ${batchNo} by ${userEmail}.`;
+      logActivity_('CREATE_BATCH_TRANSACTION', logDetails);
+    }
+    
+    return batchNo;
+  } catch (e) {
+    Logger.log(`Error in createTransactionsBatch: ${e}`);
+    throw new Error('Failed to create transaction batch.');
+  }
+}
+
+function searchTransactions(query) {
+    if (!query || String(query).trim() === '') {
+        return [];
+    }
+    const lowerCaseQuery = String(query).toLowerCase();
+    
+    const dataRange = transactionsSheet.getRange(1, 1, transactionsSheet.getLastRow(), transactionsSheet.getLastColumn());
+    
+    // Get original values to preserve data types (like dates) for the final result
+    const originalValues = dataRange.getValues();
+    const headers = originalValues.shift(); // Remove header row
+
+    // Get display values (strings) for a reliable text-based search
+    const displayValues = dataRange.getDisplayValues();
+    displayValues.shift(); // Remove header row to align with originalValues
+
+    const results = [];
+
+    // Iterate through the display values for a safe search
+    displayValues.forEach((row, rowIndex) => {
+        // .some() is efficient and stops as soon as a match is found in the row
+        const isMatch = row.some(cell => cell.toLowerCase().includes(lowerCaseQuery));
+
+        if (isMatch) {
+            // If we find a match, build the result object from the original data
+            // to ensure data types are correct for the client.
+            const resultObj = {};
+            headers.forEach((header, colIndex) => {
+                const originalValue = originalValues[rowIndex][colIndex];
+                
+                // Standardize dates into ISO strings for reliable client-side parsing
+                if (originalValue instanceof Date) {
+                    resultObj[header] = originalValue.toISOString();
+                } else {
+                    resultObj[header] = originalValue;
+                }
+            });
+            results.push(resultObj);
+        }
+    });
+
+    return results;
+}
+
+function updateTransactionStatus(transactionId, newStatus, remarks, userInfo) {
+  try {
+    const data = transactionsSheet.getDataRange().getValues();
+    const headers = data[0];
+    const idColIndex = headers.indexOf('TRANSACTION_ID');
+    const statusColIndex = headers.indexOf('CURRENT_STATUS');
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][idColIndex] === transactionId) {
+        const oldStatus = data[i][statusColIndex];
+        const rowToUpdate = i + 1;
+
+        // Prevent logging if the status hasn't actually changed
+        if (oldStatus === newStatus) {
+            return { success: false, message: 'Status is already set to ' + newStatus };
+        }
+
+        transactionsSheet.getRange(rowToUpdate, statusColIndex + 1).setValue(newStatus);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('REMARKS') + 1).setValue(remarks);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('STATUS_CHANGED_BY') + 1).setValue(userInfo.fullName);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('DATE_STATUS_CHANGED') + 1).setValue(new Date());
+
+        // Use the new, structured logging function for the history sheet
+        logTransactionHistory_(transactionId, userInfo.email, oldStatus, newStatus, remarks);
+
+        return { success: true, message: `Transaction ${transactionId} updated.` };
+      }
+    }
+    throw new Error('Transaction ID not found.');
+  } catch(e) {
+    Logger.log(`Error in updateTransactionStatus: ${e}`);
+    throw new Error('Failed to update transaction status.');
+  }
+}
+
+
+// --- UTILITY ---
+
+/**
+ * Logs a general application activity to the 'ActivityLog' sheet.
+ * @param {string} actionType The type of action performed (e.g., USER_LOGIN).
+ * @param {string} details A description of the event.
+ */
+function logActivity_(actionType, details) {
+  try {
+    const logId = activityLogSheet.getLastRow(); // Use a simple row count for ID
+    const user = Session.getActiveUser() ? Session.getActiveUser().getEmail() : 'SYSTEM';
+    activityLogSheet.appendRow([logId, new Date(), user, actionType, details]);
+  } catch (e) {
+    Logger.log(`Failed to write to ActivityLog sheet: ${e}`);
+  }
+}
+
+/**
+ * Logs a transaction's status change to the 'TransactionHistory' sheet.
+ * This creates a structured audit trail for every transaction.
+ * @param {string} transactionId The ID of the transaction being updated.
+ * @param {string} userEmail The email of the user making the change.
+ * @param {string} previousStatus The status before the change.
+ * @param {string} newStatus The status after the change.
+ * @param {string} remarks Any notes associated with the change.
+ */
+function logTransactionHistory_(transactionId, userEmail, previousStatus, newStatus, remarks) {
+  try {
+    const historyId = transactionHistorySheet.getLastRow(); // Use a simple row count for ID
+    transactionHistorySheet.appendRow([
+      historyId,
+      transactionId,
+      new Date(),
+      userEmail,
+      previousStatus,
+      newStatus,
+      remarks
+    ]);
+  } catch (e) {
+    Logger.log(`Failed to write to TransactionHistory sheet for TX_ID ${transactionId}: ${e}`);
+  }
+}
+
+/**
+ * Fetches all transactions submitted by the current user.
+ * @param {object} userInfo The logged-in user's information.
+ * @returns {Array<object>} A list of transaction objects.
+ */
+function getSubmittedByUser(userInfo) {
+  const data = transactionsSheet.getDataRange().getValues();
+  const headers = data.shift();
+  const submittedByIndex = headers.indexOf('SUBMITTED_BY');
+  
+  const results = data.filter(row => row[submittedByIndex] === userInfo.fullName)
+    .map(row => {
+      let obj = {};
+      headers.forEach((header, i) => {
+        // Ensure dates are in a standardized ISO format for reliable parsing on the client-side
+        if (row[i] instanceof Date) {
+          obj[header] = row[i].toISOString();
+        } else {
+          obj[header] = row[i];
+        }
+      });
+      return obj;
+    })
+    .sort((a, b) => {
+      // Robust sorting to handle invalid or missing dates
+      const dateA = new Date(a.DATE_SUBMITTED);
+      const dateB = new Date(b.DATE_SUBMITTED);
+      
+      const timeA = !isNaN(dateA.getTime()) ? dateA.getTime() : 0;
+      const timeB = !isNaN(dateB.getTime()) ? dateB.getTime() : 0;
+
+      return timeB - timeA; // Sort most recent (highest timestamp) first
+    });
+    
+  return results;
+}
+
+/**
+ * Allows a CL user to update a transaction they submitted, but only if it's still in 'Submitted' status.
+ * @param {object} transactionData The updated data for the transaction, including its ID.
+ * @param {object} userInfo The logged-in user performing the action.
+ * @returns {object} A success or failure message.
+ */
+function updateTransactionByCL(transactionData, userInfo) {
+  try {
+    const data = transactionsSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    // Find column indices
+    const idColIndex = headers.indexOf('TRANSACTION_ID');
+    const statusColIndex = headers.indexOf('CURRENT_STATUS');
+    const submittedByColIndex = headers.indexOf('SUBMITTED_BY');
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][idColIndex] === transactionData.TRANSACTION_ID) {
+        // SECURITY CHECK: Ensure the transaction is still 'Submitted' and belongs to the user
+        if (data[i][statusColIndex] !== 'Submitted') {
+          throw new Error('This transaction has already been processed and can no longer be edited.');
+        }
+        if (data[i][submittedByColIndex] !== userInfo.fullName) {
+          throw new Error('You can only edit transactions you have submitted.');
+        }
+
+        const rowToUpdate = i + 1; // 1-based index
+        
+        // Update only the fields a CL user is allowed to change
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('HH_ID_NO') + 1).setValue(transactionData.HH_ID_NO);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('GRANTEE_NAME') + 1).setValue(transactionData.GRANTEE_NAME);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('ENTRY_ID_NO') + 1).setValue(transactionData.ENTRY_ID_NO);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('MEMBER_NAME') + 1).setValue(transactionData.MEMBER_NAME);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('UPDATE_TYPE') + 1).setValue(transactionData.UPDATE_TYPE);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('FIELD_TO_UPDATE') + 1).setValue(transactionData.FIELD_TO_UPDATE);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('OLD_VALUE') + 1).setValue(transactionData.OLD_VALUE);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('NEW_VALUE') + 1).setValue(transactionData.NEW_VALUE);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('REQUIREMENTS_STATUS') + 1).setValue(transactionData.REQUIREMENTS_STATUS);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('REQUIREMENTS_NOTES') + 1).setValue(transactionData.REQUIREMENTS_NOTES);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('VALIDATION_LINK') + 1).setValue(transactionData.VALIDATION_LINK);
+        
+        const logDetails = `Transaction ${transactionData.TRANSACTION_ID} was edited by submitter ${userInfo.email}.`;
+        logActivity_('EDIT_TRANSACTION', logDetails);
+
+        return { success: true, message: `Transaction ${transactionData.TRANSACTION_ID} updated successfully.` };
+      }
+    }
+    throw new Error('Transaction ID not found.');
+  } catch (e) {
+    Logger.log(`Error in updateTransactionByCL: ${e}`);
+    throw new Error(e.message || 'Failed to update transaction.');
+  }
+} // THIS IS THE CORRECT END of updateTransactionByCL
+
+/**
+ * Internal helper function to get the mapping of roles to view types.
+ * @returns {object} An object like {'City Link': 'CL_view', 'WebAdmin': 'Admin_view'}
+ */
+function getRoleViewMapping_() {
+  const mapping = {};
+  // Assuming Roles is Col G, ViewTypes is Col H. Adjust if necessary.
+  const data = dropdownsSheet.getRange("G2:H" + dropdownsSheet.getLastRow()).getValues(); 
+
+  data.forEach(row => {
+    const role = row[0];
+    const viewType = row[1];
+    if (role && viewType) {
+      mapping[role] = viewType;
+    }
+  });
+  return mapping;
 }
