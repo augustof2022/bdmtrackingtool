@@ -2,632 +2,233 @@
 <html>
   <head>
     <base target="_top">
-    <!-- The 'include' function is a special Apps Script feature to load other files -->
-    <?!= include('style'); ?>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <?!= include('Stylesheet'); ?>
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <!-- Burger Menu -->
-        <div id="burger-menu" class="burger-menu">
-          ☰
-          <div id="menu-dropdown" class="menu-dropdown hidden">
-            <a href="#" id="locator-board-btn">Locator Board</a>
+    <!-- View Container -->
+    <div id="main-container">
+      
+      <!-- Login View -->
+      <div id="login-view" class="view active">
+        <div class="card">
+          <h2>BDM Update Requests Tracking</h2>
+          <p>Please sign in to continue.</p>
+          <form id="login-form">
+            <div class="form-group">
+              <label for="email">Email Address</label>
+              <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Login</button>
+            <p id="login-message" class="message-text"></p>
+          </form>
+          <div class="form-footer">
+            <a href="#" id="show-register-link">Don't have an account? Create one</a>
           </div>
         </div>
-        <h1>Staff Time-In</h1>
-        <div id="clock" class="clock">Loading clock...</div>
       </div>
 
-      <div class="form-section">
-        <label for="staff-name-input">Select Your Name:</label>
-        <!-- New Autocomplete Component Structure -->
-        <div class="autocomplete-container">
-          <input type="text" id="staff-name-input" placeholder="Type to search for your name..." autocomplete="off" required>
-          <div id="staff-name-results" class="autocomplete-items hidden"></div>
+      <!-- Registration View -->
+      <div id="register-view" class="view">
+        <div class="card">
+            <h2>Create New Account</h2>
+            <p>Your account will be pending approval.</p>
+            <form id="register-form">
+              <div class="form-group">
+                <label for="reg-fullname">Full Name</label>
+                <input type="text" id="reg-fullname" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-role">Role</label>
+                <select id="reg-role" required>
+                  <option value="" disabled selected>Loading roles...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="reg-area">Area Name</label>
+                <input type="text" id="reg-area" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-email">Email Address</label>
+                <input type="email" id="reg-email" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-password">Password</label>
+                <input type="password" id="reg-password" required>
+              </div>
+              <div class="form-group">
+                <label for="reg-confirm-password">Confirm Password</label>
+                <input type="password" id="reg-confirm-password" required>
+              </div>
+              <button type="submit" class="btn btn-primary">Register</button>
+              <p id="register-message" class="message-text"></p>
+            </form>
+            <div class="form-footer">
+              <a href="#" id="show-login-link">Already have an account? Login</a>
+            </div>
         </div>
       </div>
 
-      <div class="form-section">
-        <label for="work-status-select">Work Status:</label>
-        <select id="work-status-select" required>
-          <option value="" disabled selected>Loading statuses...</option>
-        </select>
-      </div>
+      <!-- App Container (hidden until logged in) -->
+      <div id="app-container" class="view">
+        <header>
+          <h1>Transaction Portal</h1>
+          <div class="user-info">
+            <!-- Admin-only controls, hidden by default -->
+            <div id="admin-controls" style="display:none;">
+              <select id="admin-view-switcher">
+                <option value="bdm-home-view">View as: BDM</option>
+                <option value="cl-home-view">View as: CL</option>
+              </select>
+              <button id="manage-users-btn" class="btn btn-secondary">Manage Users</button>
+            </div>
+            <span id="user-details"></span>
+            <button id="logout-btn" class="btn btn-secondary">Logout</button>
+          </div>
+        </header>
 
-      <div class="form-section">
-        <label for="purpose-input">Purpose:</label>
-        <input type="text" id="purpose-input" placeholder="e.g., Conduct FDS, Administer SWDI" required>
-      </div>
+        <main>
+          <!-- City Link Home View -->
+          <!-- City Link Home View -->
+          <div id="cl-home-view" class="role-view">
+            <div class="tab-nav">
+              <button class="tab-link active" data-tab="cl-create-tab">Create</button>
+              <button class="tab-link" data-tab="cl-search-tab">Search</button>
+              <button class="tab-link" data-tab="cl-submitted-tab">My Submissions</button>
+            </div>
 
-      <div class="camera-section">
-        <button id="start-camera-btn" class="btn btn-primary">Take Selfie</button>
-        <div id="camera-container" class="hidden">
-          <video id="video" autoplay playsinline></video>
-          <canvas id="canvas" class="hidden"></canvas>
-          <button id="capture-btn" class="btn btn-capture">Capture</button>
-        </div>
-        <img id="photo-preview" class="photo-preview hidden" alt="Your selfie preview">
-      </div>
+            <!-- Create Tab -->
+            <div id="cl-create-tab" class="tab-content active">
+              <div class="batch-header">
+                <h2>Create New Transaction Batch</h2>
+                <h3>Batch ID: <span id="batch-id-display"></span></h3>
+              </div>
+              <div id="batch-transaction-creator">
+                <div class="table-wrapper">
+                  <table id="transaction-table">
+                    <thead>
+                      <tr>
+                        <th>Action</th>
+                        <th>Transaction ID</th>
+                        <th>HH ID</th>
+                        <th>Grantee Name</th>
+                        <th>Entry ID No.</th>
+                        <th>Member Name</th>
+                        <th>Update Type</th>
+                        <th>Field to Update</th>
+                        <th>Old Value</th>
+                        <th>New Value</th>
+                        <th>Req. Status</th>
+                        <th>Req. Notes</th>
+                        <th>Validation Link</th>
+                      </tr>
+                    </thead>
+                    <tbody id="transaction-table-body"></tbody>
+                  </table>
+                </div>
+                <div class="batch-actions">
+                  <button id="add-row-btn" class="btn btn-secondary">Add Row</button>
+                  <button id="submit-batch-btn" class="btn btn-primary">Submit Batch</button>
+                </div>
+              </div>
+            </div>
 
-      <div class="location-section">
-        <h2>Your Location</h2>
-        <div id="location-display" class="location-display">
-          Location will be displayed here after capture.
-        </div>
-      </div>
+            <!-- Search Tab -->
+            <div id="cl-search-tab" class="tab-content">
+              <h2>Find a Transaction</h2>
+              <form id="cl-search-form" class="search-form">
+                <input type="search" id="cl-search-input" placeholder="Search by Batch No, Transaction ID, HH ID, or Grantee Name...">
+                <button type="submit" class="btn">Search</button>
+              </form>
+              <div id="cl-search-results-container" class="table-wrapper" style="margin-top: 20px;">
+                <!-- Search results will be rendered here -->
+              </div>
+            </div>
 
-      <div class="submit-section">
-        <button id="login-btn" class="btn btn-success" disabled>Send</button>
-      </div>
-
-      <div id="status-overlay" class="hidden">
-        <div class="spinner"></div>
-        <p id="status-message">Processing...</p>
-      </div>
-
-      <!-- Confirmation Receipt Modal -->
-      <div id="confirmation-overlay" class="hidden">
-        <div class="confirmation-card">
-          <h2>Time In Successful!</h2>
-          <p>You may screenshot this page for your records.</p>
-          
-          <!-- NEW: This div will hold the background image and the overlaid text -->
-          <div id="receipt-image-container">
-            <div class="receipt-details">
-              <p><strong>Name:</strong> <span id="receipt-name"></span></p>
-              <p><strong>Work Status:</strong> <span id="receipt-work-status"></span></p>
-              <p><strong>Purpose:</strong> <span id="receipt-purpose"></span></p>
-              <p><strong>Time:</strong> <span id="receipt-timestamp"></span></p>
-              <p><strong>Location:</strong> <span id="receipt-location"></span></p>
+            <!-- My Submissions Tab -->
+            <div id="cl-submitted-tab" class="tab-content">
+              <h2>My Submitted Transactions</h2>
+              <p>Click the button below to load a read-only view of all transactions you have submitted.</p>
+              <div class="batch-actions" style="margin-bottom: 20px;">
+                 <button id="fetch-submissions-btn" class="btn btn-primary">Generate My Submissions</button>
+              </div>
+              <div id="cl-submitted-container" class="table-wrapper">
+                <!-- User's submissions will be rendered here -->
+              </div>
             </div>
           </div>
 
-          <button id="new-login-btn" class="btn btn-primary">New Log In</button>
-        </div>
+          <!-- BDM Team Home View -->
+          <div id="bdm-home-view" class="role-view">
+            <h2>BDM Dashboard</h2>
+            <h3>Find Transactions to Process</h3>
+            <form id="bdm-search-form" class="search-form">
+              <input type="search" id="bdm-search-input" placeholder="Search by Batch No, Transaction ID, HH ID, or Grantee Name...">
+              <button type="submit" class="btn">Search</button>
+            </form>
+          </div>
+
+          <!-- Search Results View -->
+          <div id="search-results-view" class="view" style="display: none;">
+            <button id="back-to-home-btn" class="btn btn-secondary">← Back to Dashboard</button>
+            <h2>Search Results</h2>
+            <div id="results-table-container">
+              <!-- Search results table will be dynamically inserted here -->
+            </div>
+          </div>
+
+        </main>
       </div>
-      <!-- Locator Board Modal -->
-      <div id="locator-overlay" class="hidden">
-        <div class="locator-modal-content">
-          <button id="close-locator-btn" class="close-btn">×</button>
-          
-          <!-- The header, controls, and table are now direct children of the modal content -->
-          <div class="header">
-            <h1>Locator Board</h1>
+
+      <!-- User Approval Modal -->
+      <div id="user-approval-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Manage User Approvals</h2>
+            <button id="modal-close-btn" class="close-btn">×</button>
           </div>
-          <div class="controls">
-            <label for="locator-date">Select Date:</label>
-            <input type="date" id="locator-date">
-            <button id="load-data-btn" class="btn btn-primary" style="padding: 0.5rem 1rem; width: auto;">Load Data</button>
-          </div>
-          <div id="table-loader">
-            <div class="spinner"></div>
-            <p>Loading data...</p>
-          </div>
-          <div class="table-wrapper" id="table-wrapper" style="display:none;">
-            <table id="locator-table">
-              <thead>
-                <tr>
-                  <th class="frozen-col" data-column="staffName">Staff Name <span class="sort-arrow"></span></th>
-                  <th data-column="time">Time <span class="sort-arrow"></span></th>
-                  <th data-column="workStatus">Work Status <span class="sort-arrow"></span></th>
-                  <th data-column="purpose">Purpose <span class="sort-arrow"></span></th>
-                  <th data-column="selfie">Selfie <span class="sort-arrow"></span></th>
-                  <th data-column="locationName">Location Name <span class="sort-arrow"></span></th>
-                  <th data-column="locationLink">Location Link <span class="sort-arrow"></span></th>
-                </tr>
-              </thead>
-              <tbody id="locator-table-body">
-                <!-- Data will be injected here by JavaScript -->
-              </tbody>
-            </table>
+          <div class="modal-body">
+            <p>Review all registered users below. For 'Pending' users, you can change their status and save.</p>
+            <div id="user-list-container">
+              <!-- User list will be dynamically inserted here -->
+            </div>
           </div>
         </div>
       </div>
 
-<script>
-      // --- MAIN PAGE: Element Selectors ---
-      const clockElement = document.getElementById('clock');
-      const staffNameInput = document.getElementById('staff-name-input');
-      const staffNameResults = document.getElementById('staff-name-results');
-      const workStatusSelect = document.getElementById('work-status-select');
-      const purposeInput = document.getElementById('purpose-input');
-      const startCameraBtn = document.getElementById('start-camera-btn');
-      const cameraContainer = document.getElementById('camera-container');
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const captureBtn = document.getElementById('capture-btn');
-      const photoPreview = document.getElementById('photo-preview');
-      const locationDisplay = document.getElementById('location-display');
-      const loginBtn = document.getElementById('login-btn');
-      const statusOverlay = document.getElementById('status-overlay');
-      const statusMessage = document.getElementById('status-message');
-      const confirmationOverlay = document.getElementById('confirmation-overlay');
-      const receiptImageContainer = document.getElementById('receipt-image-container');
-      const receiptName = document.getElementById('receipt-name');
-      const receiptTimestamp = document.getElementById('receipt-timestamp');
-      const receiptLocation = document.getElementById('receipt-location');
-      const receiptPurpose = document.getElementById('receipt-purpose');
-      const receiptWorkStatus = document.getElementById('receipt-work-status');
-      const newLoginBtn = document.getElementById('new-login-btn');
+      <!-- Loading Spinner Overlay -->
+      <div id="loader" class="loader-overlay">
+        <div class="spinner"></div>
+      </div>
 
-      // --- LOCATOR BOARD: Element Selectors ---
-      const burgerMenu = document.getElementById('burger-menu');
-      const menuDropdown = document.getElementById('menu-dropdown');
-      const locatorBoardBtn = document.getElementById('locator-board-btn');
-      const locatorOverlay = document.getElementById('locator-overlay');
-      const closeLocatorBtn = document.getElementById('close-locator-btn');
-      const dateInput = document.getElementById('locator-date');
-      const tableBody = document.getElementById('locator-table-body');
-      const tableWrapper = document.getElementById('table-wrapper');
-      const loader = document.getElementById('table-loader');
-      const locatorHeaders = document.querySelectorAll('#locator-table th');
-      const loadDataBtn = document.getElementById('load-data-btn');
+      <!-- Batch Success Modal -->
+      <div id="batch-success-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Batch Submitted Successfully</h2>
+            <button id="batch-success-close-btn" class="close-btn">×</button>
+          </div>
+          <div class="modal-body">
+            <p>Please complete the following physical processing steps:</p>
+            <ol>
+              <li>Ensure to bundle and secure the document.</li>
+              <li>Mark the bundle with the <strong>Batch Number</strong> shown below.</li>
+              <li>Ensure that all attachments are marked with their proper individual <strong>Transaction No</strong>.</li>
+            </ol>
+            <div class="batch-no-display-container">
+              <h3>Batch Number</h3>
+              <p id="modal-batch-no-display"></p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      // --- State Variables ---
-      let staffNamesList = [];
-      let selectedStaffName = "";
-      let capturedImageData = null;
-      let userLocation = null;
-      let sortState = { column: 'staffName', direction: 'asc' };
+    </div>
 
-      // --- NEW: Define statuses that don't require selfie/purpose/location ---
-      const simpleLogStatuses = [
-        'Absent', 'Sick Leave',
-        'Vacation Leave', 'Ctdo Leave', 'Maternity Leave', 'SPL',
-        'Solo Parent', 'Magna Carta Leave'
-      ];
-
-      // --- MAIN PAGE FUNCTIONS ---
-
-      /**
-       * @description NEW: Handles changes in the Work Status dropdown to show/hide fields.
-       */
-      function handleWorkStatusChange() {
-        const selectedStatus = workStatusSelect.value;
-        const isSimpleLog = simpleLogStatuses.includes(selectedStatus);
-
-        const purposeSection = document.getElementById('purpose-input').parentElement;
-        const cameraSection = document.querySelector('.camera-section');
-        const locationSection = document.querySelector('.location-section');
-
-        if (isSimpleLog) {
-          // Hide fields not required for simple logs
-          purposeSection.classList.add('hidden');
-          cameraSection.classList.add('hidden');
-          locationSection.classList.add('hidden');
-
-          // Clear any data from the hidden fields to prevent accidental submission
-          purposeInput.value = '';
-          capturedImageData = null;
-          userLocation = null;
-          photoPreview.classList.add('hidden');
-          photoPreview.src = '';
-          startCameraBtn.classList.remove('hidden'); // Reset camera button
-          cameraContainer.classList.add('hidden'); // Hide video feed if it was open
-        } else {
-          // Show all fields for full logs
-          purposeSection.classList.remove('hidden');
-          cameraSection.classList.remove('hidden');
-          locationSection.classList.remove('hidden');
-        }
-
-        validateForm(); // Re-validate the form whenever the status changes
-      }
-
-      function formatCustomDate(date) {
-        const dateOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-        const timeOptions = { hour: 'numeric', minute: '2-digit', second: '2-digit' , hour12: true };
-        const formattedDate = new Intl.DateTimeFormat('en-US', dateOptions).format(date);
-        const formattedTime = new Intl.DateTimeFormat('en-US', timeOptions).format(date);
-        return `${formattedDate} - ${formattedTime}`;
-      }
-
-      function updateClock() {
-        const now = new Date();
-        clockElement.textContent = formatCustomDate(now);
-      }
-
-      function populateStaffNames() {
-        google.script.run
-          .withSuccessHandler(names => {
-            staffNamesList = names;
-            staffNameInput.placeholder = "Type to search for your name...";
-          })
-          .withFailureHandler(err => {
-            staffNameInput.placeholder = "Error loading names";
-            console.error("Failed to get names:", err);
-          })
-          .getStaffNames();
-      }
-
-      function populateWorkStatuses() {
-        google.script.run
-          .withSuccessHandler(statuses => {
-            workStatusSelect.innerHTML = '<option value="" disabled selected>Select a status</option>';
-            statuses.forEach(status => {
-              const option = document.createElement('option');
-              option.value = status;
-              option.textContent = status;
-              workStatusSelect.appendChild(option);
-            });
-          })
-          .withFailureHandler(err => {
-            workStatusSelect.innerHTML = '<option value="" disabled selected>Error loading statuses</option>';
-            console.error("Failed to get statuses:", err);
-          })
-          .getWorkStatuses();
-      }
-
-      async function startCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-          video.srcObject = stream;
-          cameraContainer.classList.remove('hidden');
-          startCameraBtn.classList.add('hidden');
-        } catch (err) {
-          alert("Camera access was denied. Please enable camera permissions for this site in your browser settings.");
-          console.error("Camera Error:", err);
-        }
-      }
-
-      function captureAndLocate() {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const context = canvas.getContext('2d');
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        capturedImageData = canvas.toDataURL('image/jpeg');
-        
-        photoPreview.src = capturedImageData;
-        photoPreview.classList.remove('hidden');
-        cameraContainer.classList.add('hidden');
-        
-        const stream = video.srcObject;
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-        video.srcObject = null;
-
-        locationDisplay.textContent = 'Getting location...';
-        if ('geolocation' in navigator) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              userLocation = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude
-              };
-              locationDisplay.textContent = `Lat: ${userLocation.latitude.toFixed(5)}, Lon: ${userLocation.longitude.toFixed(5)}`;
-              validateForm();
-            },
-            (err) => {
-              locationDisplay.textContent = 'Error: Could not get location. Please enable location services.';
-              console.error("Geolocation Error:", err);
-              validateForm();
-            },
-            { enableHighAccuracy: true }
-          );
-        } else {
-          locationDisplay.textContent = 'Geolocation is not supported by your browser.';
-          validateForm();
-        }
-      }
-
-      /**
-       * @description UPDATED: Validates the form based on the selected work status.
-       */
-      function validateForm() {
-        const nameSelected = selectedStaffName !== "";
-        const statusSelected = workStatusSelect.value !== "";
-        const isSimpleLog = simpleLogStatuses.includes(workStatusSelect.value);
-
-        if (isSimpleLog) {
-          // For simple logs, only name and status are required.
-          loginBtn.disabled = !(nameSelected && statusSelected);
-        } else {
-          // For full logs, all original fields are required.
-          const purposeEntered = purposeInput.value.trim() !== "";
-          const photoTaken = capturedImageData !== null;
-          loginBtn.disabled = !(nameSelected && statusSelected && purposeEntered && photoTaken);
-        }
-      }
-      
-      /**
-       * @description UPDATED: Shows a receipt, adjusting its content for simple vs. full logs.
-       */
-      function showReceipt(data, isSimpleLog) {
-        // Get the parent <p> tags for purpose and location
-        const purposeP = document.getElementById('receipt-purpose').parentElement;
-        const locationP = document.getElementById('receipt-location').parentElement;
-
-        if (isSimpleLog) {
-          // For simple logs, use a generic background and hide unnecessary fields
-          receiptImageContainer.style.backgroundImage = 'linear-gradient(to top, #4a90e2, #8ec5fc)';
-          purposeP.style.display = 'none';
-          locationP.style.display = 'none';
-        } else {
-          // For full logs, show the selfie with an overlay and all fields
-          const gradient = 'linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0) 70%)';
-          receiptImageContainer.style.backgroundImage = `${gradient}, url('${capturedImageData}')`;
-          purposeP.style.display = 'block';
-          locationP.style.display = 'block';
-          receiptLocation.textContent = data.address;
-          receiptPurpose.textContent = data.purpose;
-        }
-
-        // Display common details for all log types
-        receiptName.textContent = selectedStaffName;
-        receiptTimestamp.textContent = formatCustomDate(new Date(data.timestamp));
-        receiptWorkStatus.textContent = data.workStatus;
-        confirmationOverlay.classList.remove('hidden');
-      }
-
-      /**
-       * @description UPDATED: Submits data to the server, sending a different payload for simple vs. full logs.
-       */
-      function submitLog() {
-        showStatus('Processing...');
-        loginBtn.disabled = true;
-
-        const isSimpleLog = simpleLogStatuses.includes(workStatusSelect.value);
-
-        let data = {
-          staffName: selectedStaffName,
-          workStatus: workStatusSelect.value,
-          purpose: purposeInput.value.trim() // Send purpose, will be blank for simple logs
-        };
-
-        // For full logs, add the image and location data
-        if (!isSimpleLog) {
-          data.imageData = capturedImageData;
-          data.latitude = userLocation.latitude;
-          data.longitude = userLocation.longitude;
-        }
-        
-        google.script.run
-          .withSuccessHandler(response => {
-            hideStatus();
-            if (response.success) {
-              // Pass the isSimpleLog flag to the receipt function
-              showReceipt(response, isSimpleLog);
-            } else {
-              alert(response.message);
-              loginBtn.disabled = false;
-            }
-          })
-          .withFailureHandler(err => {
-            hideStatus();
-            alert("An error occurred: " + err.message);
-            console.error("Submission Error:", err);
-            loginBtn.disabled = false;
-          })
-          .logUserData(data);
-      }
-
-      function resetForm() {
-        staffNameInput.value = '';
-        selectedStaffName = '';
-        staffNameResults.innerHTML = '';
-        staffNameResults.classList.add('hidden');
-        workStatusSelect.selectedIndex = 0;
-        purposeInput.value = '';
-        photoPreview.classList.add('hidden');
-        photoPreview.src = '';
-        startCameraBtn.classList.remove('hidden');
-        locationDisplay.textContent = 'Location will be displayed here after capture.';
-        loginBtn.disabled = true;
-        capturedImageData = null;
-        userLocation = null;
-        confirmationOverlay.classList.add('hidden');
-        
-        // Ensure all sections are visible again after a reset
-        handleWorkStatusChange();
-      }
-      
-      function showStatus(message) {
-        statusMessage.textContent = message;
-        statusOverlay.classList.remove('hidden');
-      }
-
-      function hideStatus() {
-        statusOverlay.classList.add('hidden');
-      }
-      
-      // --- LOCATOR BOARD FUNCTIONS ---
-      function openLocatorBoard() {
-        locatorOverlay.classList.remove('hidden');
-        setDefaultDate();
-        fetchAndRenderData();
-      }
-
-      function closeLocatorBoard() {
-        locatorOverlay.classList.add('hidden');
-      }
-
-      function setDefaultDate() {
-        const today = new Date();
-        const offset = 8 * 60; // Philippines is UTC+8
-        const phTime = new Date(today.getTime() + (offset + today.getTimezoneOffset()) * 60000);
-        dateInput.value = phTime.toISOString().split('T')[0];
-      }
-
-      function fetchAndRenderData() {
-        loader.style.display = 'block';
-        tableWrapper.style.display = 'none';
-        const selectedDate = dateInput.value;
-        if (!selectedDate) return;
-
-        google.script.run
-          .withSuccessHandler(data => {
-            renderTable(data);
-            loader.style.display = 'none';
-            tableWrapper.style.display = 'block';
-          })
-          .withFailureHandler(err => {
-            loader.textContent = "Error: " + err.message;
-            console.error("Server returned an error:", err);
-          })
-          .getLocatorData(selectedDate);
-      }
-
-      function renderTable(data) {
-        sortData(data, sortState.column, sortState.direction, false);
-        tableBody.innerHTML = '';
-        if (data.length === 0) {
-          const row = document.createElement('tr');
-          const cell = document.createElement('td');
-          cell.colSpan = locatorHeaders.length;
-          cell.textContent = 'No time-in data found for this date.';
-          cell.style.textAlign = 'center';
-          row.appendChild(cell);
-          tableBody.appendChild(row);
-          return;
-        }
-        data.forEach(item => {
-          const row = document.createElement('tr');
-          if (item.noLog) {
-            row.classList.add('no-log-row');
-            row.innerHTML = `<td class="frozen-col">${item.staffName}</td><td colspan="6">No time-in record for this date.</td>`;
-          } else {
-             // Use placeholder for fields that might be empty on simple logs
-            const timeDisplay = item.time ? new Date(item.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }) : 'N/A';
-            const purposeDisplay = item.purpose || 'N/A';
-            const selfieDisplay = item.selfieUrl ? `<a href="${item.selfieUrl}" target="_blank" class="clickable-link">View Selfie</a>` : 'N/A';
-            const locationNameDisplay = item.locationName || 'N/A';
-            const locationLinkDisplay = item.locationLink ? `<a href="${item.locationLink}" target="_blank" class="clickable-link">View on Map</a>` : 'N/A';
-
-            row.innerHTML = `<td class="frozen-col">${item.staffName}</td><td>${timeDisplay}</td><td>${item.workStatus || 'N/A'}</td><td>${purposeDisplay}</td><td>${selfieDisplay}</td><td>${locationNameDisplay}</td><td>${locationLinkDisplay}</td>`;
-          }
-          tableBody.appendChild(row);
-        });
-        updateSortArrows();
-      }
-
-      function sortData(data, column, direction, toggle = true) {
-        if (toggle) {
-          if (sortState.column === column) {
-            sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
-          } else {
-            sortState.column = column;
-            sortState.direction = 'asc';
-          }
-        } else {
-          sortState.column = column;
-          sortState.direction = direction;
-        }
-        data.sort((a, b) => {
-          let valA = a[column] || '';
-          let valB = b[column] || '';
-          if (a.noLog && !b.noLog) return 1;
-          if (!a.noLog && b.noLog) return -1;
-          if (a.noLog && b.noLog) {
-            valA = a.staffName;
-            valB = b.staffName;
-          }
-          const directionMultiplier = sortState.direction === 'asc' ? 1 : -1;
-          if (valA < valB) return -1 * directionMultiplier;
-          if (valA > valB) return 1 * directionMultiplier;
-          return 0;
-        });
-      }
-
-      function updateSortArrows() {
-        locatorHeaders.forEach(header => {
-          const arrow = header.querySelector('.sort-arrow');
-          if (header.dataset.column === sortState.column) {
-            arrow.textContent = sortState.direction === 'asc' ? '▲' : '▼';
-          } else {
-            arrow.textContent = '';
-          }
-        });
-      }
-
-      // --- ALL EVENT LISTENERS ---
-      document.addEventListener('DOMContentLoaded', () => {
-        updateClock();
-        setInterval(updateClock, 1000);
-        populateStaffNames();
-        populateWorkStatuses();
-        // Add the new listener for the work status dropdown
-        workStatusSelect.addEventListener('change', handleWorkStatusChange);
-        // Initially hide the sections that might not be needed
-        handleWorkStatusChange();
-      });
-
-      staffNameInput.addEventListener('input', () => {
-        const value = staffNameInput.value.toLowerCase();
-        staffNameResults.innerHTML = '';
-        staffNameResults.classList.add('hidden');
-        selectedStaffName = "";
-        validateForm();
-        if (!value) return;
-        const filteredNames = staffNamesList.filter(name => name.toLowerCase().includes(value));
-        if (filteredNames.length > 0) {
-          staffNameResults.classList.remove('hidden');
-          filteredNames.forEach(name => {
-            const item = document.createElement('div');
-            item.textContent = name;
-            item.addEventListener('click', () => {
-              staffNameInput.value = name;
-              selectedStaffName = name;
-              staffNameResults.innerHTML = '';
-              staffNameResults.classList.add('hidden');
-              validateForm();
-            });
-            staffNameResults.appendChild(item);
-          });
-        }
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!e.target.closest('.autocomplete-container')) {
-          staffNameResults.classList.add('hidden');
-        }
-        if (!e.target.closest('#burger-menu')) {
-          menuDropdown.classList.add('hidden');
-        }
-      });
-
-      startCameraBtn.addEventListener('click', startCamera);
-      captureBtn.addEventListener('click', captureAndLocate);
-      purposeInput.addEventListener('input', validateForm); // Re-add for real-time validation
-      loginBtn.addEventListener('click', submitLog);
-      newLoginBtn.addEventListener('click', resetForm);
-      
-      // Listeners for Menu and Locator Board
-      burgerMenu.addEventListener('click', (e) => {
-        e.stopPropagation();
-        menuDropdown.classList.toggle('hidden');
-      });
-      locatorBoardBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        menuDropdown.classList.add('hidden');
-        openLocatorBoard();
-      });
-      closeLocatorBtn.addEventListener('click', closeLocatorBoard);
-      loadDataBtn.addEventListener('click', fetchAndRenderData);
-
-      locatorHeaders.forEach(header => {
-        header.addEventListener('click', () => {
-          const column = header.dataset.column;
-          if (!column) return;
-          const rows = Array.from(tableBody.querySelectorAll('tr'));
-          const data = rows.map(row => {
-            if (row.classList.contains('no-log-row')) {
-              return { staffName: row.cells[0].textContent, noLog: true };
-            }
-            return {
-              staffName: row.cells[0].textContent,
-              time: row.cells[1].textContent,
-              workStatus: row.cells[2].textContent,
-              purpose: row.cells[3].textContent,
-              selfieUrl: row.cells[4].querySelector('a')?.href,
-              locationName: row.cells[5].textContent,
-              locationLink: row.cells[6].querySelector('a')?.href
-            };
-          });
-          sortData(data, column, sortState.direction);
-          renderTable(data);
-        });
-      });
-</script>
+    <?!= include('JavaScript'); ?>
   </body>
 </html>
