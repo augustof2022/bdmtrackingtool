@@ -1,0 +1,1295 @@
+<script>
+  // --- STATE MANAGEMENT ---
+  const state = {
+    currentUser: null,
+    dropdownOptions: {},
+    currentView: 'login-view',
+    searchResults: [],
+    pendingPromises: {} // To manage async operations
+  };
+
+  // --- DOM ELEMENTS ---
+  const loader = document.getElementById('loader');
+  const views = document.querySelectorAll('.view');
+  const loginMessage = document.getElementById('login-message');
+  const registerMessage = document.getElementById('register-message');
+  const adminControls = document.getElementById('admin-controls');  
+
+  // --- APP INITIALIZATION ---
+  document.addEventListener('DOMContentLoaded', () => {
+    // Attach initial event listeners
+    document.getElementById('login-form').addEventListener('submit', handleLogin);
+    document.getElementById('register-form').addEventListener('submit', handleRegistration);
+    document.getElementById('logout-btn').addEventListener('click', handleLogout);
+
+    document.getElementById('show-register-link').addEventListener('click', (e) => { e.preventDefault(); switchView('register-view'); });
+    document.getElementById('show-login-link').addEventListener('click', (e) => { e.preventDefault(); switchView('login-view'); });
+
+    // Batch creation listeners
+    document.getElementById('add-row-btn').addEventListener('click', addTransactionRow);
+    document.getElementById('submit-batch-btn').addEventListener('click', handleSubmitBatch);
+
+    // Tab navigation listener
+    document.querySelector('.tab-nav').addEventListener('click', handleTabSwitch);
+    
+    // On-demand fetch for "My Submissions" tab
+    document.body.addEventListener('click', function(e) {
+      if (e.target && e.target.id === 'fetch-submissions-btn') {
+        loadMySubmissions();
+      }
+    });
+
+    // Search and navigation
+    document.getElementById('cl-search-form').addEventListener('submit', handleSearch);
+    document.getElementById('bdm-search-form').addEventListener('submit', handleSearch);
+    document.getElementById('back-to-home-btn').addEventListener('click', () => {
+      // Use the robust viewType to determine the correct home view
+      const homeView = (state.currentUser.viewType === 'CL_view') ? 'cl-home-view' : 'bdm-home-view';
+      switchView(homeView);
+    });
+
+    // Admin and Modal listeners
+    document.getElementById('manage-users-btn').addEventListener('click', openUserApprovalModal);
+    document.getElementById('admin-view-switcher').addEventListener('change', handleAdminViewSwitch);
+    document.getElementById('modal-close-btn').addEventListener('click', closeUserApprovalModal);
+    document.getElementById('batch-success-close-btn').addEventListener('click', closeBatchSuccessModal);
+
+    // Pre-fetch dropdown options as soon as the app loads
+    // We store the promise to ensure we can wait for it later
+    state.pendingPromises.dropdowns = new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(options => {
+          state.dropdownOptions = options;
+          // Populate the registration role dropdown
+          const roleSelect = document.getElementById('reg-role');
+          if (roleSelect) {
+            roleSelect.innerHTML = generateSelectOptions(options.roleOptions);
+          }
+          resolve();
+        })
+        .withFailureHandler(err => {
+          handleError(err);
+          reject(err);
+        })
+        .getDropdownOptions();
+    });
+  });
+
+  // --- VIEW & LOADER UTILS ---
+  function showLoader(show) {
+    loader.style.display = show ? 'flex' : 'none';
+  }
+
+  function switchView(viewId) {
+    const allKnownViews = [
+      'login-view', 'register-view', 'app-container',
+      'cl-home-view', 'bdm-home-view', 'search-results-view'
+    ];
+    const subViews = ['cl-home-view', 'bdm-home-view', 'search-results-view'];
+
+    allKnownViews.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) { element.style.display = 'none'; }
+    });
+
+    const targetViewElement = document.getElementById(viewId);
+    if (targetViewElement) {
+      if (subViews.includes(viewId)) {
+        document.getElementById('app-container').style.display = 'block';
+        targetViewElement.style.display = 'block';
+      } else {
+        targetViewElement.style.display = 'flex';
+      }
+    }
+    
+    // If switching to the CL view, initialize the batch creator
+    if (viewId === 'cl-home-view') {
+        initializeBatchCreator();
+    }
+    state.currentView = viewId;
+  }
+
+  function handleError(error) {
+    console.error('An error occurred:', error);
+    alert('An error occurred: ' + error.message);
+    showLoader(false);
+  }
+
+  // --- NEW HELPER FUNCTION for auto-resizing textareas ---
+  /**
+   * Adjusts the height of a textarea element to fit its content.
+   * @param {HTMLTextAreaElement} textarea The textarea to resize.
+   */
+  function autoResizeTextarea(textarea) {
+    if (!textarea || typeof textarea.style === 'undefined') return;
+    textarea.style.height = 'auto'; // Temporarily shrink to get the correct scrollHeight
+    textarea.style.height = (textarea.scrollHeight) + 'px';
+  }
+
+  // --- AUTHENTICATION HANDLERS ---
+  function handleLogin(event) {
+    event.preventDefault();
+    showLoader(true);
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    loginMessage.textContent = '';
+    loginMessage.className = 'message-text';
+
+    google.script.run
+      .withSuccessHandler(result => {
+        if (result.status === 'SUCCESS') {
+          state.currentUser = result.user;
+          // Wait for dropdowns to be loaded before proceeding
+          state.pendingPromises.dropdowns.then(() => {
+            showLoader(false);
+            document.getElementById('user-details').textContent = `Welcome, ${result.user.fullName}`;
+            
+            let targetView = '';
+            const viewType = result.user.viewType;
+
+            // --- NEW VIEW LOGIC ---
+            if (viewType === 'Admin_view') {
+              targetView = 'bdm-home-view'; // Admin defaults to BDM view
+              adminControls.style.display = 'flex'; // Show admin controls
+            } else if (viewType === 'CL_view') {
+              targetView = 'cl-home-view';
+              adminControls.style.display = 'none'; // Hide admin controls
+            } else { // Includes BDM_view and any other defaults
+              targetView = 'bdm-home-view';
+              adminControls.style.display = 'none'; // Hide admin controls
+            }
+            
+            if (targetView) {
+              switchView(targetView);
+            } else {
+              handleError(new Error('Could not determine a view for your user role.'));
+            }
+          }).catch(err => {
+            showLoader(false);
+            handleError(new Error("Could not load required app data. Please refresh."));
+          });
+
+        } else {
+          showLoader(false);
+          if (result.status === 'PENDING_APPROVAL') {
+            loginMessage.textContent = 'Your account is pending approval.';
+          } else {
+            loginMessage.textContent = 'Invalid email or password.';
+          }
+        }
+      })
+      .withFailureHandler(err => {
+        handleError(err);
+        loginMessage.textContent = 'An error occurred during login.';
+      })
+      .verifyUser(email, password);
+  }
+
+  function handleRegistration(event) {
+    event.preventDefault();
+    const fullName = document.getElementById('reg-fullname').value;
+    const areaName = document.getElementById('reg-area').value;
+    const email = document.getElementById('reg-email').value;
+    const password = document.getElementById('reg-password').value;
+    const confirmPassword = document.getElementById('reg-confirm-password').value;
+    const role = document.getElementById('reg-role').value; // Get selected role
+
+    registerMessage.textContent = '';
+
+    if (password !== confirmPassword) {
+      registerMessage.textContent = 'Passwords do not match.';
+      return;
+    }
+    if (!role) {
+      registerMessage.textContent = 'Please select a role.';
+      return;
+    }
+    
+    showLoader(true);
+    const userData = { fullName, areaName, email, password, role }; // Add role to data
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          registerMessage.textContent = response.message;
+          document.getElementById('register-form').reset();
+          setTimeout(() => switchView('login-view'), 3000);
+        } else {
+          registerMessage.textContent = response.message;
+        }
+      })
+      .withFailureHandler(handleError)
+      .createNewUser(userData);
+  }
+
+  function handleLogout() {
+    state.currentUser = null;
+    document.getElementById('login-form').reset();
+    document.getElementById('register-form').reset();
+    loginMessage.textContent = '';
+    registerMessage.textContent = '';
+    switchView('login-view');
+  }
+
+  // --- TRANSACTION FORM ---
+  // --- BATCH TRANSACTION CREATION ---
+
+  function initializeBatchCreator() {
+    // First, check if user is eligible to create a batch
+    if (!state.currentUser || !state.currentUser.userCode) {
+      const creatorDiv = document.getElementById('batch-transaction-creator');
+      const batchDisplay = document.getElementById('batch-id-display');
+      batchDisplay.textContent = 'N/A';
+      creatorDiv.innerHTML = '<p class="error-message">Your account does not have a User Code assigned. You cannot create batches. Please contact an administrator.</p>';
+      return;
+    }
+
+    showLoader(true);
+    google.script.run
+      .withSuccessHandler(batchId => {
+        showLoader(false);
+        document.getElementById('batch-id-display').textContent = batchId;
+        document.getElementById('transaction-table-body').innerHTML = '';
+        // Restore creator HTML if it was replaced by an error message
+        document.getElementById('batch-transaction-creator').innerHTML = `
+          <div class="table-wrapper">
+            <table id="transaction-table">
+              <thead>
+                <tr>
+                  <th>Action</th><th>Transaction ID</th><th>HH ID</th><th>Grantee Name</th><th>Entry ID No.</th>
+                  <th>Member Name</th><th>Update Type</th><th>Field to Update</th><th>Old Value</th>
+                  <th>New Value</th><th>Req. Status</th><th>Req. Notes</th><th>Validation Link</th>
+                </tr>
+              </thead>
+              <tbody id="transaction-table-body"></tbody>
+            </table>
+          </div>
+          <div class="batch-actions">
+            <button id="add-row-btn" class="btn btn-secondary">Add Row</button>
+            <button id="submit-batch-btn" class="btn btn-primary">Submit Batch</button>
+          </div>
+        `;
+        // Re-attach listeners for the new buttons
+        document.getElementById('add-row-btn').addEventListener('click', addTransactionRow);
+        document.getElementById('submit-batch-btn').addEventListener('click', handleSubmitBatch);
+
+        addTransactionRow();
+        makeTableResizable(document.getElementById('transaction-table'));
+      })
+      .withFailureHandler(err => {
+        showLoader(false);
+        handleError(err);
+        document.getElementById('batch-id-display').textContent = 'Error Generating ID';
+      })
+      .generateNewBatchNo(state.currentUser);
+  }
+
+function addTransactionRow() {
+    const tableBody = document.getElementById('transaction-table-body');
+    const newRow = tableBody.insertRow();
+    const batchNo = document.getElementById('batch-id-display').textContent;
+    
+    // The sequence is the new number of rows (1-based)
+    const sequence = (tableBody.rows.length).toString().padStart(2, '0');
+    const transactionId = `${batchNo}-${sequence}`;
+
+    // Generate options for the Update Type dropdown from our new data structure
+    const updateTypeOptions = state.dropdownOptions.updateTypeTemplates.map(t => t.updateType);
+
+    newRow.innerHTML = `
+      <td><button class="remove-row-btn" onclick="removeTransactionRow(this)">-</button></td>
+      <td><input type="text" class="transaction-id" value="${transactionId}" readonly></td>
+      <td><div class="input-with-icon">
+          <input type="text" class="hh-id" placeholder="Enter HH ID">
+          <svg class="duplicate-icon hh-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
+      </div></td>
+      <td><input type="text" class="grantee-name" readonly placeholder="Auto-filled"></td>
+      <td><input type="text" class="entry-id" readonly placeholder="Auto-filled"></td>
+      <td><div class="input-with-icon">
+          <select class="member-name" disabled><option value="">-- Enter HH ID First --</option></select>
+          <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
+      </div></td>
+      <td><select class="update-type">${generateSelectOptions(updateTypeOptions)}</select></td>
+      <td><textarea class="field-to-update" rows="1" placeholder="Auto-filled from Update Type" readonly></textarea></td>
+      <td><textarea class="old-value" rows="1" placeholder="Auto-filled from Update Type"></textarea></td>
+      <td><textarea class="new-value" rows="1" placeholder="Auto-filled from Update Type"></textarea></td>
+      <td><select class="req-status">${generateSelectOptions(['Complete', 'Incomplete', 'N/A'])}</select></td>
+      <td><textarea class="req-notes" rows="1"></textarea></td>
+      <td><input type="text" class="validation-link" placeholder="Link to doc"></td>
+    `;
+
+    // Add event listeners for the new workflow
+    newRow.querySelector('.hh-id').addEventListener('blur', handleHhIdBlurForRow);
+    newRow.querySelector('.member-name').addEventListener('change', handleMemberSelection);
+    newRow.querySelector('.hh-duplicate').addEventListener('click', duplicateRowByHousehold);
+    newRow.querySelector('.member-duplicate').addEventListener('click', duplicateRowByMember);
+    // NEW: Add listener for update type change
+    newRow.querySelector('.update-type').addEventListener('change', handleUpdateTypeChange);
+    // Auto-resize textareas in the new row
+    const textareas = newRow.querySelectorAll('textarea');
+    textareas.forEach(textarea => {
+      textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+      autoResizeTextarea(textarea); // Set initial size
+    });
+  }
+
+  function removeTransactionRow(button) {
+    const rowToRemove = button.closest('tr');
+    const tableBody = rowToRemove.parentNode;
+    rowToRemove.remove();
+
+    // After removing, re-index all remaining rows
+    const batchNo = document.getElementById('batch-id-display').textContent;
+    const allRows = tableBody.querySelectorAll('tr');
+    allRows.forEach((row, index) => {
+      const sequence = (index + 1).toString().padStart(2, '0');
+      const newTransactionId = `${batchNo}-${sequence}`;
+      row.querySelector('.transaction-id').value = newTransactionId;
+    });
+  }
+
+  function handleHhIdBlurForRow(event) {
+    const hhIdInput = event.target;
+    const row = hhIdInput.closest('tr');
+    const granteeNameInput = row.querySelector('.grantee-name');
+    const entryIdInput = row.querySelector('.entry-id');
+    const memberNameSelect = row.querySelector('.member-name');
+    const hhId = hhIdInput.value;
+
+    // Reset fields
+    granteeNameInput.value = '';
+    entryIdInput.value = '';
+    memberNameSelect.innerHTML = '<option value="">-- Loading --</option>';
+    memberNameSelect.disabled = true;
+    delete row.dataset.householdData;
+
+    if (hhId) {
+      google.script.run
+        .withSuccessHandler(data => {
+          if (data && data.members && data.members.length > 0) {
+            // Store the data on the row for later use
+            row.dataset.householdData = JSON.stringify(data.members);
+            
+            granteeNameInput.value = data.granteeName || 'N/A';
+            
+            // Populate the member dropdown
+            memberNameSelect.innerHTML = ''; // Clear loading message
+            let optionsHtml = '<option value="" disabled selected>-- Please Select --</option>';
+            data.members.forEach(member => {
+              optionsHtml += `<option value="${member.memberName}">${member.memberName}</option>`;
+            });
+            memberNameSelect.innerHTML = optionsHtml;
+            memberNameSelect.disabled = false;
+          } else {
+            granteeNameInput.value = 'HH ID Not Found';
+            memberNameSelect.innerHTML = '<option value="">-- No Members Found --</option>';
+          }
+        })
+        .withFailureHandler(err => {
+          granteeNameInput.value = 'Error';
+          memberNameSelect.innerHTML = '<option value="">-- Error --</option>';
+          handleError(err);
+        })
+        .getHouseholdData(hhId);
+    } else {
+      memberNameSelect.innerHTML = '<option value="">-- Enter HH ID First --</option>';
+    }
+  }
+
+  function handleMemberSelection(event) {
+    const select = event.target;
+    const row = select.closest('tr');
+    const selectedMemberName = select.value;
+    const entryIdInput = row.querySelector('.entry-id');
+
+    const membersData = JSON.parse(row.dataset.householdData || '[]');
+    const selectedMember = membersData.find(m => m.memberName === selectedMemberName);
+
+    if (selectedMember) {
+      entryIdInput.value = selectedMember.entryId;
+    } else {
+      entryIdInput.value = '';
+    }
+  }
+
+function handleUpdateTypeChange(event) {
+    const select = event.target;
+    const row = select.closest('tr');
+    const selectedType = select.value;
+
+    const fieldToUpdateEl = row.querySelector('.field-to-update');
+    const oldValueEl = row.querySelector('.old-value');
+    const newValueEl = row.querySelector('.new-value');
+
+    // Find the template object from our state
+    const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
+
+    if (template) {
+      fieldToUpdateEl.value = template.fieldTemplate || '';
+      oldValueEl.value = template.oldValueTemplate || '';
+      newValueEl.value = template.newValueTemplate || '';
+    } else {
+      // Clear fields if no template is found (e.g., placeholder selected)
+      fieldToUpdateEl.value = '';
+      oldValueEl.value = '';
+      newValueEl.value = '';
+    }
+
+    // THIS IS THE DEFINITIVE FIX:
+    // Instead of calling the resize function directly, we programmatically dispatch an 'input' event.
+    // This reliably triggers the existing event listener that we know works when the user types.
+    setTimeout(() => {
+        const inputEvent = new Event('input', { bubbles: true });
+        fieldToUpdateEl.dispatchEvent(inputEvent);
+        oldValueEl.dispatchEvent(inputEvent);
+        newValueEl.dispatchEvent(inputEvent);
+    }, 0);
+  }
+
+  function handleSubmitBatch() {
+    const batchNo = document.getElementById('batch-id-display').textContent;
+    const tableBody = document.getElementById('transaction-table-body');
+    const rows = tableBody.querySelectorAll('tr');
+    const transactions = [];
+
+    if (rows.length === 0) {
+      alert('Please add at least one transaction row.');
+      return;
+    }
+
+    let isValid = true;
+    rows.forEach((row, index) => {
+      row.style.backgroundColor = ''; // Reset row color
+      const transaction = {
+        transactionId: row.querySelector('.transaction-id').value,
+        hhId: row.querySelector('.hh-id').value,
+        granteeName: row.querySelector('.grantee-name').value,
+        entryId: row.querySelector('.entry-id').value,
+        memberName: row.querySelector('.member-name').value,
+        updateType: row.querySelector('.update-type').value,
+        fieldToUpdate: row.querySelector('.field-to-update').value,
+        oldValue: row.querySelector('.old-value').value,
+        newValue: row.querySelector('.new-value').value,
+        requirementsStatus: row.querySelector('.req-status').value,
+        requirementsNotes: row.querySelector('.req-notes').value,
+        validationLink: row.querySelector('.validation-link').value,
+      };
+
+      // Basic validation: Check for HH ID, selected member, and a selected update type.
+      if (!transaction.hhId || !transaction.updateType || !transaction.memberName || transaction.granteeName === 'HH ID Not Found') {
+        isValid = false;
+        row.style.backgroundColor = '#f9dada'; // Highlight invalid rows
+      }
+      transactions.push(transaction);
+    });
+
+    if (!isValid) {
+      alert('Please fill out all required fields in the highlighted rows. This includes selecting an Update Type.');
+      return;
+    }
+
+    showLoader(true);
+    const batchData = { batchNo, transactions };
+    
+    google.script.run
+      .withSuccessHandler(returnedBatchNo => {
+        showLoader(false);
+        // Instead of an alert, open our new custom modal.
+        openBatchSuccessModal(returnedBatchNo);
+        // The form reset (initializeBatchCreator) is now handled by closeBatchSuccessModal.
+      })
+      .withFailureHandler(handleError)
+      .createTransactionsBatch(batchData, state.currentUser);
+  }
+
+  function openBatchSuccessModal(batchNo) {
+    document.getElementById('modal-batch-no-display').textContent = batchNo;
+    document.getElementById('batch-success-modal').style.display = 'flex';
+  }
+
+  function closeBatchSuccessModal() {
+    document.getElementById('batch-success-modal').style.display = 'none';
+    // Reset the form for a new batch after the user has acknowledged the success message.
+    initializeBatchCreator();
+  }
+
+  // --- SEARCH ---
+  function handleSearch(event) {
+    event.preventDefault();
+    const form = event.target;
+    const input = form.querySelector('input[type="search"]');
+
+    if (!input) {
+      handleError(new Error("Search input field could not be found in the form."));
+      return;
+    }
+    const query = input.value;
+    if (!query) {
+      return;
+    }
+    
+    showLoader(true);
+
+    google.script.run
+      .withSuccessHandler(results => {
+        showLoader(false);
+        state.searchResults = results;
+        
+        // --- THIS IS THE FIX ---
+        // Use the new viewType to correctly route the search results.
+        const viewType = state.currentUser.viewType;
+        if (viewType === 'Admin_view' || viewType === 'BDM_view') {
+          renderSearchResults(results); // Render for BDM/Admin
+          switchView('search-results-view');
+        } else {
+          renderClSearchResults(results); // Render for CL
+        }
+      })
+      .withFailureHandler(handleError)
+      .searchTransactions(query);
+  }
+
+function renderSearchResults(results) {
+    // This function handles the BDM and Admin search results view
+    const container = document.getElementById('results-table-container');
+    if (!results || results.length === 0) {
+      container.innerHTML = '<p>No results found.</p>';
+      return;
+    }
+
+    const displayHeaders = [
+        'BATCH_NO', 'TRANSACTION_ID', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO',
+        'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE',
+        'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE',
+        'OLD_VALUE', 'NEW_VALUE'
+    ];
+    
+    const actionHeaders = [
+        'CURRENT_STATUS', 'REMARKS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'ACTION'
+    ];
+
+    let tableHtml = '<table class="results-table"><thead><tr>';
+    
+    [...displayHeaders, ...actionHeaders].forEach(header => {
+      const formattedHeader = header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      tableHtml += `<th>${formattedHeader}</th>`;
+    });
+    tableHtml += '</tr></thead><tbody>';
+
+    results.forEach(row => {
+      tableHtml += `<tr 
+                      data-transaction-id="${row.TRANSACTION_ID}" 
+                      data-initial-status="${row.CURRENT_STATUS}"
+                      data-initial-remarks="${row.REMARKS || ''}"
+                    >`;
+
+      displayHeaders.forEach(header => {
+        const value = row[header];
+        let displayValue = (value === null || value === undefined) ? '' : value;
+        if (header.toLowerCase().includes('date') && displayValue) {
+            const d = new Date(displayValue);
+            if (!isNaN(d.getTime())) displayValue = d.toLocaleString();
+        }
+        tableHtml += `<td>${displayValue}</td>`;
+      });
+      
+      const formattedDateStatusChanged = row.DATE_STATUS_CHANGED ? new Date(row.DATE_STATUS_CHANGED).toLocaleString() : '';
+      
+      tableHtml += `
+        <td><select class="status-dropdown">${generateSelectOptions(state.dropdownOptions.statusOptions, row.CURRENT_STATUS, false)}</select></td>
+        <td><textarea class="remarks-input" rows="1">${row.REMARKS || ''}</textarea></td>
+        <td>${row.STATUS_CHANGED_BY || ''}</td>
+        <td>${formattedDateStatusChanged}</td>
+        <td><button class="btn btn-primary save-status-btn" disabled>Save</button></td>
+      `;
+
+      tableHtml += '</tr>';
+    });
+
+    container.innerHTML = tableHtml + '</tbody></table>';
+
+    // Activate interactive elements after rendering
+    container.querySelectorAll('.results-table tbody tr').forEach(row => {
+      const statusDropdown = row.querySelector('.status-dropdown');
+      const remarksInput = row.querySelector('.remarks-input');
+      
+      statusDropdown.addEventListener('change', () => toggleSaveButtonState(row));
+      remarksInput.addEventListener('input', () => {
+        toggleSaveButtonState(row);
+        autoResizeTextarea(remarksInput); // Resize as user types
+      });
+      
+      row.querySelector('.save-status-btn').addEventListener('click', handleStatusSave);
+    });
+
+    // --- THIS IS THE FIX ---
+    // Wait for the browser to render the new table, then resize all textareas.
+    setTimeout(() => {
+      container.querySelectorAll('textarea.remarks-input').forEach(textarea => {
+          autoResizeTextarea(textarea);
+      });
+    }, 0);
+    
+    // Make the newly rendered BDM results table resizable
+    const table = container.querySelector('.results-table');
+    if (table) {
+      makeTableResizable(table);
+    }
+}
+
+function handleStatusSave(event) {
+    const row = event.target.closest('tr');
+    const button = event.target;
+    const transactionId = row.dataset.transactionId;
+    
+    // Get initial state from data attributes
+    const initialStatus = row.dataset.initialStatus;
+
+    // Get current state from inputs
+    const newStatus = row.querySelector('.status-dropdown').value;
+    const newRemarks = row.querySelector('.remarks-input').value;
+
+    const statusChanged = newStatus !== initialStatus;
+
+    // --- VALIDATION LOGIC ---
+    if (!statusChanged && newRemarks !== row.dataset.initialRemarks) {
+      alert('A status change is required when adding or editing remarks. Please select a new status.');
+      return;
+    }
+
+    if (!statusChanged && newRemarks === row.dataset.initialRemarks) {
+      alert('No changes to save.');
+      return;
+    }
+    
+    showLoader(true);
+    button.disabled = true; 
+    button.textContent = 'Saving...';
+
+    google.script.run
+      .withSuccessHandler(response => {
+         showLoader(false); 
+         alert(response.message);
+         
+         if (response.success) {
+            // Update the row's state on the frontend to match the new reality
+            row.dataset.initialStatus = newStatus;
+            row.dataset.initialRemarks = newRemarks;
+            
+            // --- VISUAL FEEDBACK FOR SUCCESS ---
+            button.textContent = 'Saved!';
+            button.classList.remove('btn-actionable');
+            button.classList.add('btn-success'); // Make it green
+
+            // Re-run the state check. This will now see no changes and disable the button,
+            // but the logic will leave the green 'btn-success' class.
+            toggleSaveButtonState(row);
+
+         } else {
+            // If the server rejects the save, revert to the "actionable" state
+            button.disabled = false;
+            button.textContent = 'Save';
+            button.classList.add('btn-actionable');
+         }
+      })
+      .withFailureHandler(err => { 
+        handleError(err); 
+        button.disabled = false; 
+        button.textContent = 'Save'; 
+        button.classList.add('btn-actionable');
+      })
+      .updateTransactionStatus(transactionId, newStatus, newRemarks, state.currentUser);
+  }
+
+  /**
+   * Enables or disables the save button for a row based on whether its
+   * status or remarks have changed from their initial values. Also manages button color.
+   * @param {HTMLTableRowElement} row The table row to check.
+   */
+  function toggleSaveButtonState(row) {
+    const initialStatus = row.dataset.initialStatus;
+    const initialRemarks = row.dataset.initialRemarks;
+
+    const currentStatus = row.querySelector('.status-dropdown').value;
+    const currentRemarks = row.querySelector('.remarks-input').value;
+    const saveButton = row.querySelector('.save-status-btn');
+
+    const hasChanged = (currentStatus !== initialStatus) || (currentRemarks !== initialRemarks);
+    
+    if (hasChanged) {
+        saveButton.disabled = false;
+        saveButton.classList.remove('btn-success'); // Remove green if present
+        saveButton.classList.add('btn-actionable');  // Add red to show pending change
+    } else {
+        saveButton.disabled = true;
+        saveButton.classList.remove('btn-actionable'); // Remove red if present
+        // We intentionally do NOT remove btn-success here, so it persists after a save.
+    }
+  }
+
+  // --- HELPERS ---
+function generateSelectOptions(options, selectedValue, includePlaceholder = true) {
+    if (!Array.isArray(options)) return '';
+
+    // Create a mutable copy of the options to avoid changing the global state
+    let availableOptions = [...options];
+
+    // --- THIS IS THE FIX for the display issue ---
+    // If the transaction's current status (selectedValue) is not in the list of
+    // selectable options for the user, add it to the beginning of the list for this
+    // specific dropdown so it displays correctly.
+    if (selectedValue && !availableOptions.includes(selectedValue)) {
+      availableOptions.unshift(selectedValue);
+    }
+
+    const placeholder = includePlaceholder
+      ? `<option value="" disabled ${!selectedValue ? 'selected' : ''}>-- Select Status --</option>`
+      : '';
+
+    const optionElements = availableOptions.map(opt =>
+      `<option value="${opt}" ${opt === selectedValue ? 'selected' : ''}>${opt}</option>`
+    ).join('');
+
+    return placeholder + optionElements;
+  }
+
+  // --- ADMIN FUNCTIONS ---
+
+  function handleAdminViewSwitch(event) {
+    const selectedView = event.target.value;
+    switchView(selectedView);
+  }
+
+  function openUserApprovalModal() {
+    showLoader(true);
+    google.script.run
+      .withSuccessHandler(users => {
+        showLoader(false);
+        renderUsersForApproval(users);
+        document.getElementById('user-approval-modal').style.display = 'flex';
+      })
+      .withFailureHandler(handleError)
+      .getUsersForAdmin(state.currentUser);
+  }
+
+  function closeUserApprovalModal() {
+    document.getElementById('user-approval-modal').style.display = 'none';
+    document.getElementById('user-list-container').innerHTML = ''; // Clear content
+  }
+
+  function renderUsersForApproval(users) {
+    const container = document.getElementById('user-list-container');
+    if (!users || users.length === 0) {
+      container.innerHTML = '<p>No users found.</p>';
+      return;
+    }
+
+    let tableHtml = '<table class="results-table"><thead><tr><th>Full Name</th><th>Email</th><th>User Code</th><th>Status</th><th>Action</th></tr></thead><tbody>';
+
+    users.forEach(user => {
+      let statusControl = `<span>${user.approvalStatus}</span>`;
+      if (user.approvalStatus === 'Pending') {
+        statusControl = `<select class="user-status-select">
+                           <option value="Pending" selected>Pending</option>
+                           <option value="Approved">Approve</option>
+                           <option value="Rejected">Reject</option>
+                         </select>`;
+      }
+
+      tableHtml += `<tr data-user-email="${user.email}">
+        <td>${user.fullName}</td>
+        <td>${user.email}</td>
+        <td><input type="text" class="user-code-input" value="${user.userCode || ''}" placeholder="e.g., JDC" style="width: 100px;"></td>
+        <td class="status-cell">${statusControl}</td>
+        <td class="action-cell">
+          <button class="btn btn-primary save-user-details-btn">Save</button>
+        </td>
+      </tr>`;
+    });
+
+    container.innerHTML = tableHtml + '</tbody></table>';
+
+    // Add event listeners to all the new "Save" buttons
+    document.querySelectorAll('.save-user-details-btn').forEach(btn => {
+      btn.addEventListener('click', handleUserDetailUpdate);
+    });
+  }
+
+  function handleUserDetailUpdate(event) {
+    const button = event.target;
+    const row = button.closest('tr');
+    const userEmail = row.dataset.userEmail;
+    
+    const statusSelect = row.querySelector('.user-status-select');
+    const codeInput = row.querySelector('.user-code-input');
+
+    const details = {
+      userCode: codeInput.value.trim().toUpperCase()
+    };
+    
+    // Only include status if the dropdown exists (i.e., for pending users)
+    if (statusSelect) {
+      details.newStatus = statusSelect.value;
+      if (details.newStatus === 'Pending') {
+        // If they are just saving the code without changing status, that's fine.
+        // We will just not send the 'newStatus' field.
+        delete details.newStatus;
+      }
+    }
+
+    if (details.userCode && details.userCode.length !== 3) {
+      alert('User Code must be exactly 3 characters long.');
+      return;
+    }
+
+    showLoader(true);
+    button.disabled = true;
+    button.textContent = 'Saving...';
+
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          button.textContent = 'Saved!';
+          row.style.backgroundColor = '#dff0d8';
+          // If status was changed, update the UI to reflect it permanently
+          if (details.newStatus) {
+            row.querySelector('.status-cell').innerHTML = `<span>${details.newStatus}</span>`;
+          }
+          setTimeout(() => {
+            button.disabled = false;
+            button.textContent = 'Save';
+            row.style.backgroundColor = '';
+          }, 2000);
+        } else {
+          handleError(new Error(response.message));
+          button.disabled = false;
+          button.textContent = 'Save';
+        }
+      })
+      .withFailureHandler(err => {
+        handleError(err);
+        button.disabled = false;
+        button.textContent = 'Save';
+      })
+      .updateUserDetailsByAdmin(userEmail, details, state.currentUser);
+  }
+
+  function showUserManagement() {
+    showLoader(true);
+    google.script.run
+      .withSuccessHandler(users => {
+        showLoader(false);
+        renderUserManagementTable(users);
+        switchView('user-management-view');
+      })
+      .withFailureHandler(handleError)
+      .getUsersForAdmin(state.currentUser);
+  }
+
+  function renderUserManagementTable(users) {
+    const container = document.getElementById('user-table-container');
+    if (!users || users.length === 0) {
+      container.innerHTML = '<p>No users found.</p>';
+      return;
+    }
+
+    let tableHtml = '<table class="results-table"><thead><tr>';
+    const headers = ['Full Name', 'Email', 'Role', 'Area', 'Status', 'Action'];
+    headers.forEach(h => tableHtml += `<th>${h}</th>`);
+    tableHtml += '</tr></thead><tbody>';
+
+    users.forEach(user => {
+      tableHtml += `<tr data-user-email="${user.email}">
+        <td>${user.fullName}</td>
+        <td>${user.email}</td>
+        <td>${user.role}</td>
+        <td>${user.areaName}</td>
+        <td><span class="status-cell">${user.approvalStatus}</span></td>
+        <td class="action-cell">`;
+
+      if (user.approvalStatus === 'Pending') {
+        tableHtml += `<button class="btn btn-primary approve-btn">Approve</button>
+                      <button class="btn btn-secondary reject-btn">Reject</button>`;
+      } else {
+        tableHtml += `<span>-</span>`;
+      }
+      
+      tableHtml += `</td></tr>`;
+    });
+
+    container.innerHTML = tableHtml + '</tbody></table>';
+    
+    // Add event listeners to the new buttons
+    document.querySelectorAll('.approve-btn').forEach(btn => btn.addEventListener('click', handleUserApproval));
+    document.querySelectorAll('.reject-btn').forEach(btn => btn.addEventListener('click', handleUserApproval));
+  }
+
+  function handleUserApproval(event) {
+    const button = event.target;
+    const row = button.closest('tr');
+    const userEmail = row.dataset.userEmail;
+    const newStatus = button.classList.contains('approve-btn') ? 'Approved' : 'Rejected';
+
+    showLoader(true);
+    button.disabled = true;
+
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          alert(response.message);
+          // Update the UI dynamically
+          row.querySelector('.status-cell').textContent = newStatus;
+          row.querySelector('.action-cell').innerHTML = `<span>-</span>`;
+        } else {
+          handleError(new Error(response.message));
+          button.disabled = false;
+        }
+      })
+      .withFailureHandler(err => {
+        handleError(err);
+        button.disabled = false;
+      })
+      .updateUserApprovalStatus(userEmail, newStatus, state.currentUser);
+  }
+
+  // --- COLUMN RESIZING LOGIC ---
+  function makeTableResizable(table) {
+      const headers = table.querySelectorAll('th');
+      headers.forEach(header => {
+          const resizer = document.createElement('div');
+          resizer.className = 'resizer';
+          header.appendChild(resizer);
+          addResizerLogic(resizer, header);
+      });
+  }
+
+  function addResizerLogic(resizer, header) {
+      let x = 0;
+      let w = 0;
+
+      const mouseDownHandler = function(e) {
+          x = e.clientX;
+          const styles = window.getComputedStyle(header);
+          w = parseInt(styles.width, 10);
+
+          document.addEventListener('mousemove', mouseMoveHandler);
+          document.addEventListener('mouseup', mouseUpHandler);
+          resizer.classList.add('resizing');
+      };
+
+      const mouseMoveHandler = function(e) {
+          const dx = e.clientX - x;
+          header.style.width = `${w + dx}px`;
+      };
+
+      const mouseUpHandler = function() {
+          document.removeEventListener('mousemove', mouseMoveHandler);
+          document.removeEventListener('mouseup', mouseUpHandler);
+          resizer.classList.remove('resizing');
+      };
+
+      resizer.addEventListener('mousedown', mouseDownHandler);
+  }
+
+  // --- TABBING LOGIC ---
+  function handleTabSwitch(event) {
+    if (!event.target.classList.contains('tab-link')) return;
+
+    const tabLinks = document.querySelectorAll('.tab-link');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const targetTab = event.target.dataset.tab;
+
+    tabLinks.forEach(link => link.classList.remove('active'));
+    tabContents.forEach(content => content.classList.remove('active'));
+
+    event.target.classList.add('active');
+    document.getElementById(targetTab).classList.add('active');
+
+    // Data for 'My Submissions' is now loaded on-demand via a button.
+  }
+
+  function loadMySubmissions() {
+    const container = document.getElementById('cl-submitted-container');
+    container.innerHTML = '<p>Loading your submissions...</p>';
+    
+    google.script.run
+      .withSuccessHandler(results => {
+        if (results.length === 0) {
+          container.innerHTML = '<p>You have not submitted any transactions yet.</p>';
+          return;
+        }
+        renderReadonlyResults(results, container);
+      })
+      .withFailureHandler(err => {
+        container.innerHTML = '<p class="error-message">Could not load submissions.</p>';
+        handleError(err);
+      })
+      .getSubmittedByUser(state.currentUser);
+  }
+
+  function renderClSearchResults(results) {
+    const container = document.getElementById('cl-search-results-container');
+    if (!results || results.length === 0) {
+      container.innerHTML = '<p>No matching transactions found.</p>';
+      return;
+    }
+
+    // Define the full, detailed, read-only list of columns for the CL view
+    const displayHeaders = [
+        'BATCH_NO', 'TRANSACTION_ID', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO',
+        'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE',
+        'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE',
+        'OLD_VALUE', 'NEW_VALUE', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'
+    ];
+    
+    let tableHtml = '<table class="results-table"><thead><tr>';
+    // Create table headers based on our defined list
+    displayHeaders.forEach(header => {
+      const formattedHeader = header.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      tableHtml += `<th>${formattedHeader}</th>`;
+    });
+    tableHtml += '</tr></thead><tbody>';
+
+    // Create a table row for each result
+    results.forEach(row => {
+      tableHtml += `<tr>`;
+      // Iterate through our defined headers to ensure the correct cell order and content
+      displayHeaders.forEach(header => {
+        const value = row[header];
+        let displayValue = value === null || value === undefined ? '' : value;
+
+        // Robust date formatting for any date column
+        if (header.toLowerCase().includes('date') && displayValue) {
+          const d = new Date(displayValue);
+          if (d instanceof Date && !isNaN(d.getTime())) {
+            displayValue = d.toLocaleString();
+          }
+        }
+        
+        tableHtml += `<td>${displayValue}</td>`;
+      });
+      tableHtml += `</tr>`;
+    });
+
+    container.innerHTML = tableHtml + '</tbody></table>';
+  }
+
+  function handleClTransactionUpdate(event) {
+    const button = event.target;
+    const row = button.closest('tr');
+    
+    const transactionData = {
+      TRANSACTION_ID: row.dataset.transactionId,
+      HH_ID_NO: row.querySelector('.cl-edit-hh-id').value,
+      GRANTEE_NAME: row.querySelector('.cl-edit-grantee-name').value,
+      ENTRY_ID_NO: row.querySelector('.cl-edit-entry-id').value,
+      MEMBER_NAME: row.dataset.memberName, // Get member name from data attribute for reliability
+      UPDATE_TYPE: row.querySelector('.cl-edit-update-type').value,
+      FIELD_TO_UPDATE: row.querySelector('.cl-edit-field').value,
+      OLD_VALUE: row.querySelector('.cl-edit-old').value,
+      NEW_VALUE: row.querySelector('.cl-edit-new').value,
+      REQUIREMENTS_STATUS: row.querySelector('.cl-edit-req-status').value,
+      REQUIREMENTS_NOTES: row.querySelector('.cl-edit-req-notes').value,
+      VALIDATION_LINK: row.querySelector('.cl-edit-validation-link').value,
+    };
+    
+    showLoader(true);
+    button.disabled = true;
+    button.textContent = 'Saving...';
+    
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          alert(response.message);
+          button.textContent = 'Saved!';
+          row.style.backgroundColor = '#dff0d8';
+        } else {
+          handleError(new Error(response.message));
+          button.disabled = false;
+          button.textContent = 'Save';
+        }
+      })
+      .withFailureHandler(err => {
+        handleError(err);
+        button.disabled = false;
+        button.textContent = 'Save';
+      })
+      .updateTransactionByCL(transactionData, state.currentUser);
+  }
+
+  // A generic function to render read-only results for the "My Submissions" tab
+  function renderReadonlyResults(results, container) {
+      // Use the specific list of columns you requested for this view
+      const headers = [
+          'BATCH_NO',
+          'TRANSACTION_ID',
+          'DATE_SUBMITTED',
+          'HH_ID_NO',
+          'GRANTEE_NAME',
+          'MEMBER_NAME',
+          'UPDATE_TYPE',
+          'CURRENT_STATUS',
+          'STATUS_CHANGED_BY',
+          'DATE_STATUS_CHANGED',
+          'REMARKS'
+      ];
+      
+      let tableHtml = `<table class="results-table"><thead><tr>`;
+      headers.forEach(h => {
+        tableHtml += `<th>${h.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`;
+      });
+      tableHtml += '</tr></thead><tbody>';
+
+      results.forEach(row => {
+          tableHtml += `<tr>`;
+          headers.forEach(header => {
+            const value = row[header];
+            let displayValue = value === null || value === undefined ? '' : value;
+
+            // Robust date formatting for any column that contains 'DATE'
+            if (header.includes('DATE') && displayValue) {
+              const d = new Date(displayValue);
+              if (d instanceof Date && !isNaN(d.getTime())) {
+                displayValue = d.toLocaleString();
+              }
+            }
+            // Add special styling for status for emphasis
+            if (header === 'CURRENT_STATUS') {
+              displayValue = `<span style="font-weight: bold;">${displayValue}</span>`;
+            }
+            tableHtml += `<td>${displayValue}</td>`;
+          });
+          tableHtml += `</tr>`;
+      });
+      container.innerHTML = tableHtml + '</tbody></table>';
+  }
+
+ // --- DUPLICATION LOGIC ---
+
+  /**
+   * Re-calculates and updates the Transaction ID for every row in the table.
+   * Ensures transaction IDs are always sequential based on their current row order.
+   */
+  function reIndexRows() {
+    const tableBody = document.getElementById('transaction-table-body');
+    if (!tableBody) return;
+
+    const batchNo = document.getElementById('batch-id-display').textContent;
+    const allRows = tableBody.querySelectorAll('tr');
+    allRows.forEach((row, index) => {
+      const sequence = (index + 1).toString().padStart(2, '0');
+      const newTransactionId = `${batchNo}-${sequence}`;
+      const idInput = row.querySelector('.transaction-id');
+      if (idInput) {
+        idInput.value = newTransactionId;
+      }
+    });
+  }
+
+  /**
+   * Helper function to perform the core row duplication.
+   * It clones the row's HTML and re-attaches all necessary event listeners.
+   * @param {HTMLTableRowElement} sourceRow The row to duplicate.
+   * @returns {HTMLTableRowElement} The newly created and inserted row.
+   */
+  function _createAndReplicateRow(sourceRow) {
+    const tableBody = document.getElementById('transaction-table-body');
+    const newRow = tableBody.insertRow(sourceRow.rowIndex); // Insert just below the source
+    newRow.innerHTML = sourceRow.innerHTML; // Copy the structure
+
+    // Re-attach all event listeners since innerHTML does not copy them
+    newRow.querySelector('.remove-row-btn').addEventListener('click', (e) => removeTransactionRow(e.target));
+    newRow.querySelector('.hh-id').addEventListener('blur', handleHhIdBlurForRow);
+    newRow.querySelector('.member-name').addEventListener('change', handleMemberSelection);
+    newRow.querySelector('.update-type').addEventListener('change', handleUpdateTypeChange);
+    newRow.querySelector('.hh-duplicate').addEventListener('click', duplicateRowByHousehold);
+    newRow.querySelector('.member-duplicate').addEventListener('click', duplicateRowByMember);
+    
+    // BUG FIX: Re-attach the auto-resize listeners for all textareas in the newly created row.
+    newRow.querySelectorAll('textarea').forEach(textarea => {
+      textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+    });
+
+    return newRow;
+  }
+
+  /**
+   * Creates a new row with the same Household ID, then clears all other fields.
+   */
+  function duplicateRowByHousehold(event) {
+    const sourceRow = event.target.closest('tr');
+    const sourceHhId = sourceRow.querySelector('.hh-id').value;
+
+    if (!sourceHhId) {
+      alert('Please enter a Household ID in the source row first.');
+      return;
+    }
+    
+    const newRow = _createAndReplicateRow(sourceRow);
+
+    // Set the HH ID value correctly and clear/reset everything else
+    newRow.querySelector('.hh-id').value = sourceHhId;
+    newRow.querySelector('.grantee-name').value = '';
+    newRow.querySelector('.entry-id').value = '';
+    newRow.querySelector('.member-name').innerHTML = '<option value="">-- Enter HH ID First --</option>';
+    newRow.querySelector('.member-name').disabled = true;
+    newRow.querySelector('.update-type').selectedIndex = 0;
+    newRow.querySelector('.field-to-update').value = '';
+    newRow.querySelector('.old-value').value = '';
+    newRow.querySelector('.new-value').value = '';
+    newRow.querySelector('.req-status').selectedIndex = 0;
+    newRow.querySelector('.req-notes').value = '';
+    newRow.querySelector('.validation-link').value = '';
+
+    // Re-index all rows to assign a new, correct transaction ID
+    reIndexRows();
+
+    // Trigger the data fetch for the duplicated HH ID
+    newRow.querySelector('.hh-id').dispatchEvent(new Event('blur'));
+  }
+
+  /**
+   * Creates a new row with the same household and member info, clearing only the transaction-specific details.
+   */
+  function duplicateRowByMember(event) {
+    const sourceRow = event.target.closest('tr');
+    const sourceHhId = sourceRow.querySelector('.hh-id').value;
+    const sourceMemberName = sourceRow.querySelector('.member-name').value;
+
+    if (!sourceHhId || !sourceMemberName) {
+      alert('Please select a Household ID and a Member Name in the source row first.');
+      return;
+    }
+    
+    const newRow = _createAndReplicateRow(sourceRow);
+    
+    // Copy all the household and member-specific data
+    newRow.querySelector('.hh-id').value = sourceHhId;
+    newRow.querySelector('.grantee-name').value = sourceRow.querySelector('.grantee-name').value;
+    newRow.querySelector('.entry-id').value = sourceRow.querySelector('.entry-id').value;
+    
+    // Copy the household data context and re-populate the dropdown
+    newRow.dataset.householdData = sourceRow.dataset.householdData;
+    const memberSelect = newRow.querySelector('.member-name');
+    if (sourceRow.dataset.householdData) {
+      memberSelect.innerHTML = sourceRow.querySelector('.member-name').innerHTML;
+      memberSelect.value = sourceMemberName; // Re-select the correct member
+      memberSelect.disabled = false;
+    }
+
+    // Clear only the transaction-specific fields
+    newRow.querySelector('.update-type').selectedIndex = 0;
+    newRow.querySelector('.field-to-update').value = '';
+    newRow.querySelector('.old-value').value = '';
+    newRow.querySelector('.new-value').value = '';
+    newRow.querySelector('.req-status').selectedIndex = 0;
+    newRow.querySelector('.req-notes').value = '';
+    newRow.querySelector('.validation-link').value = '';
+
+    // Re-index all rows to assign a new, correct transaction ID
+    reIndexRows();
+  }
+</script>
