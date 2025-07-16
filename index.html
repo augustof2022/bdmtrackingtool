@@ -119,12 +119,11 @@
                         <th>Entry ID No.</th>
                         <th>Member Name</th>
                         <th>Update Type</th>
-                        <th>Field to Update</th>
-                        <th>Old Value</th>
                         <th>New Value</th>
-                        <th>Req. Status</th>
-                        <th>Req. Notes</th>
-                        <th>Validation Link</th>
+                        <th>Requirement Status</th>
+                        <th>Attachments</th>
+                        <th>Validation</th>
+                        <th>Recommendation</th>
                       </tr>
                     </thead>
                     <tbody id="transaction-table-body"></tbody>
@@ -161,15 +160,48 @@
               </div>
             </div>
           </div>
-
           <!-- BDM Team Home View -->
           <div id="bdm-home-view" class="role-view">
-            <h2>BDM Dashboard</h2>
-            <h3>Find Transactions to Process</h3>
-            <form id="bdm-search-form" class="search-form">
-              <input type="search" id="bdm-search-input" placeholder="Search by Batch No, Transaction ID, HH ID, or Grantee Name...">
-              <button type="submit" class="btn">Search</button>
-            </form>
+            <div class="tab-nav">
+              <button class="tab-link active" data-tab="bdm-search-tab">Transaction Search</button>
+              <button class="tab-link" data-tab="bdm-directive-tab">Regional Directive</button>
+            </div>
+
+            <!-- Transaction Search Tab (existing content) -->
+            <div id="bdm-search-tab" class="tab-content active">
+              <h2>BDM Dashboard</h2>
+              <h3>Find Transactions to Process</h3>
+              <form id="bdm-search-form" class="search-form">
+                <input type="search" id="bdm-search-input" placeholder="Search by Batch No, Transaction ID, HH ID, or Grantee Name...">
+                <button type="submit" class="btn">Search</button>
+              </form>
+            </div>
+
+            <!-- Regional Directive Tab (new content) -->
+            <div id="bdm-directive-tab" class="tab-content">
+              <!-- Section 1: Create Directive -->
+              <div id="directive-creator-container" class="form-container">
+                <h2>Create New Regional Directive</h2>
+                <!-- Creation form will be rendered here by JavaScript -->
+              </div>
+              
+              <hr>
+
+              <!-- Section 2: Search/List Directives -->
+              <div id="directive-list-container">
+                <h2>Search Directives or List Pending</h2>
+                <div class="form-actions">
+                  <form id="directive-search-form" class="search-form" style="flex-grow: 1;">
+                    <input type="search" id="directive-search-input" placeholder="Search by Household ID...">
+                    <button type="submit" class="btn">Search</button>
+                  </form>
+                  <button id="fetch-pending-directives-btn" class="btn btn-primary">Generate Pending Directives</button>
+                </div>
+                <div id="directive-list-results" class="table-wrapper" style="margin-top: 20px;">
+                  <!-- Results table will be rendered here by JavaScript -->
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Search Results View -->
