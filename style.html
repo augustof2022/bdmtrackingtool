@@ -354,6 +354,65 @@
   #cl-search-results-container .results-table th:nth-child(18) { width: 150px; } /* Date Status Changed */
   #cl-search-results-container .results-table th:nth-child(19) { width: 250px; } /* Remarks */
 
+/* --- Editable Fields for Directives --- */
+.editable-field-container {
+  position: relative;
+  min-height: 24px;
+}
+
+.field-display {
+  min-height: 20px;
+  padding: 4px;
+  cursor: text;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  transition: border-color 0.2s;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.field-display:hover {
+  border-color: var(--border-color);
+  background-color: #f8f9fa;
+}
+
+.field-display.editing {
+  display: none;
+}
+
+.field-edit {
+  width: 100%;
+  border: 1px solid var(--primary-color);
+  border-radius: 3px;
+  padding: 4px;
+  font-family: var(--font-family);
+  font-size: 1rem;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: hidden;
+}
+
+.directive-link {
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.directive-link:hover {
+  color: #357abd;
+  text-decoration: none;
+}
+
+.directive-link:visited {
+  color: #6f42c1;
+}
+
+/* Ensure proper spacing for editable fields */
+#directive-list-results .results-table td.editable-field-container {
+  padding: 8px;
+  vertical-align: top;
+}
+  
     /* --- Tab Navigation --- */
   .tab-nav {
     display: flex;
