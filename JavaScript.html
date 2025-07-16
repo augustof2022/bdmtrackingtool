@@ -1673,7 +1673,7 @@ function renderDirectivesList(directives) {
   });
 }
 
-  /**
+/**
  * Converts plain text to HTML with clickable links
  * @param {string} text The text that may contain URLs
  * @returns {string} HTML string with clickable links
@@ -1693,10 +1693,10 @@ function convertTextToClickableLinks(text) {
   // URL regex pattern to match http, https, and www links
   const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
   
-  return escapedText.replace(urlRegex, (url) => {
+  return escapedText.replace(urlRegex, function(url) {
     // Ensure the URL has a protocol
-    const href = url.startsWith('http') ? url : `http://${url}`;
-    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="directive-link">${url}</a>`;
+    const href = url.startsWith('http') ? url : 'http://' + url;
+    return '<a href="' + href + '" target="_blank" rel="noopener noreferrer" class="directive-link">' + url + '</a>';
   });
 }
 
