@@ -654,20 +654,18 @@ function handleStatusSave(event) {
     
     // Get initial state from data attributes
     const initialStatus = row.dataset.initialStatus;
+    const initialRemarks = row.dataset.initialRemarks || '';
 
     // Get current state from inputs
     const newStatus = row.querySelector('.status-dropdown').value;
     const newRemarks = row.querySelector('.remarks-input').value;
 
     const statusChanged = newStatus !== initialStatus;
+    const remarksChanged = newRemarks !== initialRemarks;
 
-    // --- VALIDATION LOGIC ---
-    if (!statusChanged && newRemarks !== row.dataset.initialRemarks) {
-      alert('A status change is required when adding or editing remarks. Please select a new status.');
-      return;
-    }
-
-    if (!statusChanged && newRemarks === row.dataset.initialRemarks) {
+    // --- UPDATED VALIDATION LOGIC ---
+    // Allow saving if either status or remarks changed
+    if (!statusChanged && !remarksChanged) {
       alert('No changes to save.');
       return;
     }
@@ -716,7 +714,7 @@ function handleStatusSave(event) {
    * status or remarks have changed from their initial values. Also manages button color.
    * @param {HTMLTableRowElement} row The table row to check.
    */
-  function toggleSaveButtonState(row) {
+function toggleSaveButtonState(row) {
     const initialStatus = row.dataset.initialStatus;
     const initialRemarks = row.dataset.initialRemarks;
 
@@ -724,7 +722,9 @@ function handleStatusSave(event) {
     const currentRemarks = row.querySelector('.remarks-input').value;
     const saveButton = row.querySelector('.save-status-btn');
 
-    const hasChanged = (currentStatus !== initialStatus) || (currentRemarks !== initialRemarks);
+    const statusChanged = (currentStatus !== initialStatus);
+    const remarksChanged = (currentRemarks !== initialRemarks);
+    const hasChanged = statusChanged || remarksChanged;
     
     if (hasChanged) {
         saveButton.disabled = false;
