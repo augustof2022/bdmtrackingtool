@@ -3,7 +3,7 @@
  */
 
 // --- GLOBAL VARIABLES ---
-const SPREADSHEET_ID = '1eGz-j_zDo4uA2TW3HXPaTvjC9MTuzNhIFMXTtlXWx-0';
+const SPREADSHEET_ID = '1koGPL1twCHEUwKM7cjdeldLUOHcqAVu7ubICF8J8sRM';
 const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
 let usersSheet = ss.getSheetByName('Users');
 let transactionsSheet = ss.getSheetByName('Transactions');
@@ -11,7 +11,7 @@ let transactionHistorySheet = ss.getSheetByName('TransactionHistory'); // MODIFI
 let activityLogSheet = ss.getSheetByName('ActivityLog'); // MODIFIED
 let dropdownsSheet = ss.getSheetByName('Dropdowns');
 let granteeDataSheet = ss.getSheetByName('GranteeData');
-
+let directivesSheet = ss.getSheetByName('Directives'); // NEW
 
 /**
  * A robust setup function to create, verify, and repair all required sheets and headers.
@@ -24,12 +24,13 @@ let granteeDataSheet = ss.getSheetByName('GranteeData');
  */
 function setupSpreadsheet() {
   const sheetConfigs = {
-    'Transactions': ['TRANSACTION_ID', 'BATCH_NO', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO', 'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE', 'OLD_VALUE', 'NEW_VALUE', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'],
+    'Transactions': ['TRANSACTION_ID', 'BATCH_NO', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO', 'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS', 'NEW_VALUE', 'ATTACHMENTS', 'VALIDATION', 'RECOMMENDATION', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'],
     'Users': ['EmailAddress', 'Password', 'FullName', 'Role', 'AreaName', 'ApprovalStatus', 'UserCode'],
     'ActivityLog': ['LOG_ID', 'TIMESTAMP', 'USER_EMAIL', 'ACTION_TYPE', 'DETAILS'],
     'TransactionHistory': ['HISTORY_ID', 'TRANSACTION_ID', 'TIMESTAMP', 'USER_EMAIL', 'PREVIOUS_STATUS', 'NEW_STATUS', 'REMARKS'],
-    'Dropdowns': ['CaseManagers', 'UpdateTypes', 'FieldToUpdateTemplate', 'OldValueTemplate', 'NewValueTemplate', 'StatusOptions', 'Roles', 'ViewTypes'],
-    'GranteeData': ['HH_ID', 'GranteeFullName', 'EntryID', 'MemberFullName']
+    'Dropdowns': ['CaseManagers', 'UpdateTypes', 'FieldToUpdateTemplate', 'OldValueTemplate', 'NewValueTemplate', 'StatusOptions', 'Roles', 'ViewTypes', 'DirectiveType', 'DirectiveStatus'], // ADDED Directive Columns
+    'GranteeData': ['HH_ID', 'GranteeFullName', 'EntryID', 'MemberFullName'],
+    'Directives': ['DIRECTIVE_ID', 'HOUSEHOLD_ID', 'GRANTEE_NAME', 'ENTRY_ID', 'MEMBER_NAME', 'DIRECTIVE_TYPE', 'DATE_ENDORSED', 'DETAILS', 'CURRENT_STATUS', 'CASE_MANAGER', 'REMARKS', 'DATE_UPDATED', 'UPDATED_BY'] // NEW Directives Sheet with CASE_MANAGER
   };
 
   const sheetNames = Object.keys(sheetConfigs);
@@ -72,12 +73,14 @@ function setupSpreadsheet() {
         summaryLog.push(`- POPULATED empty sheet: '${sheetName}' with headers.`);
       } else {
         // This case handles a sheet that has content, so we check the headers.
-        const currentHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        const currentHeaders = sheet.getRange(1, 1, 1, sheet.getRange("A1:1").getLastColumn()).getValues()[0];
         const headersMatch = headers.length === currentHeaders.length && headers.every((value, index) => value === currentHeaders[index]);
 
         if (headersMatch) {
           summaryLog.push(`- OK: Sheet '${sheetName}' headers are correct.`);
         } else {
+          // Clear existing headers and set new ones to prevent issues with different column counts
+          sheet.getRange(1, 1, 1, sheet.getLastColumn()).clearContent();
           sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
           sheet.setFrozenRows(1);
           sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold");
@@ -94,6 +97,7 @@ function setupSpreadsheet() {
   activityLogSheet = ss.getSheetByName('ActivityLog');
   dropdownsSheet = ss.getSheetByName('Dropdowns');
   granteeDataSheet = ss.getSheetByName('GranteeData');
+  directivesSheet = ss.getSheetByName('Directives'); // NEW
   
   summaryLog.push('\nSetup process finished. Please run this again if you encounter header-related errors.');
   Logger.log(summaryLog.join('\n'));
@@ -229,12 +233,17 @@ function getDropdownOptions() {
   const newTemplateIndex = headers.indexOf('NewValueTemplate');
   const statusOptionsIndex = headers.indexOf('StatusOptions');
   const rolesIndex = headers.indexOf('Roles');
+  const directiveTypeIndex = headers.indexOf('DirectiveType'); // NEW
+  const directiveStatusIndex = headers.indexOf('DirectiveStatus'); // NEW
+
 
   const options = {
     updateTypeTemplates: [],
     statusOptions: [],
     caseManagers: [],
-    roleOptions: [] // New array for roles
+    roleOptions: [],
+    directiveTypes: [], // NEW
+    directiveStatuses: [] // NEW
   };
 
   data.forEach(row => {
@@ -265,6 +274,22 @@ function getDropdownOptions() {
     const roleOption = row[rolesIndex];
     if (roleOption && String(roleOption).trim() !== '') {
       options.roleOptions.push(roleOption);
+    }
+
+    // Populate Directive Type Options (NEW)
+    if (directiveTypeIndex !== -1) {
+      const directiveType = row[directiveTypeIndex];
+      if (directiveType && String(directiveType).trim() !== '') {
+        options.directiveTypes.push(directiveType);
+      }
+    }
+
+    // Populate Directive Status Options (NEW)
+    if (directiveStatusIndex !== -1) {
+      const directiveStatus = row[directiveStatusIndex];
+      if (directiveStatus && String(directiveStatus).trim() !== '') {
+        options.directiveStatuses.push(directiveStatus);
+      }
     }
   });
 
@@ -489,11 +514,10 @@ function createTransactionsBatch(batchData, userInfo) {
         userInfo.fullName,         // CASE_MANAGER
         data.updateType,           // UPDATE_TYPE
         data.requirementsStatus,   // REQUIREMENTS_STATUS
-        data.requirementsNotes,    // REQUIREMENTS_NOTES
-        data.validationLink,       // VALIDATION_LINK
-        data.fieldToUpdate,        // FIELD_TO_UPDATE
-        data.oldValue,             // OLD_VALUE
         data.newValue,             // NEW_VALUE
+        data.attachments,          // ATTACHMENTS
+        data.validation,           // VALIDATION
+        data.recommendation,       // RECOMMENDATION
         'Submitted',               // CURRENT_STATUS
         '',                        // STATUS_CHANGED_BY
         '',                        // DATE_STATUS_CHANGED
@@ -714,12 +738,11 @@ function updateTransactionByCL(transactionData, userInfo) {
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('ENTRY_ID_NO') + 1).setValue(transactionData.ENTRY_ID_NO);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('MEMBER_NAME') + 1).setValue(transactionData.MEMBER_NAME);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('UPDATE_TYPE') + 1).setValue(transactionData.UPDATE_TYPE);
-        transactionsSheet.getRange(rowToUpdate, headers.indexOf('FIELD_TO_UPDATE') + 1).setValue(transactionData.FIELD_TO_UPDATE);
-        transactionsSheet.getRange(rowToUpdate, headers.indexOf('OLD_VALUE') + 1).setValue(transactionData.OLD_VALUE);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('NEW_VALUE') + 1).setValue(transactionData.NEW_VALUE);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('REQUIREMENTS_STATUS') + 1).setValue(transactionData.REQUIREMENTS_STATUS);
-        transactionsSheet.getRange(rowToUpdate, headers.indexOf('REQUIREMENTS_NOTES') + 1).setValue(transactionData.REQUIREMENTS_NOTES);
-        transactionsSheet.getRange(rowToUpdate, headers.indexOf('VALIDATION_LINK') + 1).setValue(transactionData.VALIDATION_LINK);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('ATTACHMENTS') + 1).setValue(transactionData.ATTACHMENTS);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('VALIDATION') + 1).setValue(transactionData.VALIDATION);
+        transactionsSheet.getRange(rowToUpdate, headers.indexOf('RECOMMENDATION') + 1).setValue(transactionData.RECOMMENDATION);
         
         const logDetails = `Transaction ${transactionData.TRANSACTION_ID} was edited by submitter ${userInfo.email}.`;
         logActivity_('EDIT_TRANSACTION', logDetails);
@@ -732,7 +755,49 @@ function updateTransactionByCL(transactionData, userInfo) {
     Logger.log(`Error in updateTransactionByCL: ${e}`);
     throw new Error(e.message || 'Failed to update transaction.');
   }
-} // THIS IS THE CORRECT END of updateTransactionByCL
+}
+
+/**
+ * Allows a CL user to DELETE a transaction they submitted, but only if it's in 'Submitted' status.
+ * @param {string} transactionId The ID of the transaction to delete.
+ * @param {object} userInfo The logged-in user performing the action.
+ * @returns {object} A success or failure message.
+ */
+function deleteTransactionByCL(transactionId, userInfo) {
+  try {
+    const data = transactionsSheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    // Find column indices
+    const idColIndex = headers.indexOf('TRANSACTION_ID');
+    const statusColIndex = headers.indexOf('CURRENT_STATUS');
+    const submittedByColIndex = headers.indexOf('SUBMITTED_BY');
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][idColIndex] === transactionId) {
+        // SECURITY CHECK: Ensure the transaction is still 'Submitted' and belongs to the user
+        if (data[i][statusColIndex] !== 'Submitted') {
+          throw new Error('This transaction has already been processed and cannot be deleted.');
+        }
+        if (data[i][submittedByColIndex] !== userInfo.fullName) {
+          throw new Error('You can only delete transactions you have submitted.');
+        }
+
+        const rowToDelete = i + 1; // 1-based index
+        transactionsSheet.deleteRow(rowToDelete);
+        
+        const logDetails = `Transaction ${transactionId} was deleted by submitter ${userInfo.email}.`;
+        logActivity_('DELETE_TRANSACTION', logDetails);
+
+        return { success: true, message: `Transaction ${transactionId} was successfully deleted.` };
+      }
+    }
+    throw new Error('Transaction ID not found.');
+  } catch (e) {
+    Logger.log(`Error in deleteTransactionByCL: ${e}`);
+    throw new Error(e.message || 'Failed to delete transaction.');
+  }
+}
 
 /**
  * Internal helper function to get the mapping of roles to view types.
@@ -751,4 +816,156 @@ function getRoleViewMapping_() {
     }
   });
   return mapping;
+}
+
+// --- REGIONAL DIRECTIVE FUNCTIONS ---
+
+/**
+ * Generates a new, unique Directive ID.
+ * Format: D-{UserCode}-{YYYYMMDD}-{Sequence}
+ * @param {object} userInfo The logged-in user's information.
+ * @returns {string} The newly generated Directive ID.
+ */
+function generateNewDirectiveId(userInfo) {
+  if (!userInfo || !userInfo.userCode) {
+    throw new Error("User Code not found. Cannot generate a Directive ID.");
+  }
+  
+  const userCode = userInfo.userCode;
+  const today = new Date();
+  
+  const year = today.getFullYear();
+  const month = (today.getMonth() + 1).toString().padStart(2, '0');
+  const day = today.getDate().toString().padStart(2, '0');
+  
+  const datePart = `${year}${month}${day}`;
+  const idPrefix = `D-${userCode}-${datePart}`;
+  
+  const lastRow = directivesSheet.getLastRow();
+  if (lastRow < 2) {
+    return `${idPrefix}-1`;
+  }
+
+  const idColumn = directivesSheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+  const todaysDirectives = idColumn.filter(id => id && id.toString().startsWith(idPrefix));
+  
+  return `${idPrefix}-${todaysDirectives.length + 1}`;
+}
+
+/**
+ * Saves a new directive or updates an existing one.
+ * @param {object} directiveData The data for the directive.
+ * @param {object} userInfo The user performing the action.
+ * @returns {object} A result object with success status and the saved data.
+ */
+function saveOrUpdateDirective(directiveData, userInfo) {
+  try {
+    const headers = directivesSheet.getRange(1, 1, 1, directivesSheet.getLastColumn()).getValues()[0];
+    const idColIndex = headers.indexOf('DIRECTIVE_ID');
+    const allIds = directivesSheet.getLastRow() > 1 ? directivesSheet.getRange(2, idColIndex + 1, directivesSheet.getLastRow() - 1, 1).getValues().flat() : [];
+    const rowIndex = allIds.indexOf(directiveData.DIRECTIVE_ID);
+
+    const timestamp = new Date();
+    const userFullName = userInfo.fullName;
+
+    // Convert date string from client to a Date object for the sheet
+    const endorsedDate = new Date(directiveData.DATE_ENDORSED);
+    if (isNaN(endorsedDate.getTime())) {
+      throw new Error("Invalid 'Date Endorsed' value provided.");
+    }
+    
+    // This order MUST match the header order in setupSpreadsheet
+    const rowData = [
+      directiveData.DIRECTIVE_ID,
+      directiveData.HOUSEHOLD_ID,
+      directiveData.GRANTEE_NAME,
+      directiveData.ENTRY_ID,
+      directiveData.MEMBER_NAME,
+      directiveData.DIRECTIVE_TYPE,
+      endorsedDate,
+      directiveData.DETAILS,
+      directiveData.CURRENT_STATUS,
+      directiveData.CASE_MANAGER, // ADDED
+      directiveData.REMARKS,
+      timestamp,
+      userFullName
+    ];
+    
+    if (rowIndex !== -1) {
+      // Update existing row
+      const rowToUpdate = rowIndex + 2; // +1 for 0-based index, +1 for header row
+      directivesSheet.getRange(rowToUpdate, 1, 1, rowData.length).setValues([rowData]);
+      logActivity_('UPDATE_DIRECTIVE', `Directive ${directiveData.DIRECTIVE_ID} updated by ${userInfo.email}.`);
+    } else {
+      // Append new row
+      directivesSheet.appendRow(rowData);
+      logActivity_('CREATE_DIRECTIVE', `New directive ${directiveData.DIRECTIVE_ID} created by ${userInfo.email}.`);
+    }
+
+    // Return the data that was saved, including the new field
+    return { success: true, data: directiveData };
+  } catch (e) {
+    Logger.log(`Error in saveOrUpdateDirective: ${e}`);
+    throw new Error('Failed to save the directive.');
+  }
+}
+
+/**
+ * Fetches directives based on search criteria.
+ * @param {object} searchCriteria Can be { type: 'pending' } or { type: 'hhId', value: '...' }.
+ * @returns {Array<object>} A list of directive objects.
+ */
+function getDirectives(searchCriteria) {
+  if (directivesSheet.getLastRow() < 2) return [];
+
+  const data = directivesSheet.getDataRange().getValues();
+  const headers = data.shift();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Normalize today's date for accurate day counting
+
+  const hhIdIndex = headers.indexOf('HOUSEHOLD_ID');
+  const statusIndex = headers.indexOf('CURRENT_STATUS');
+  const dateEndorsedIndex = headers.indexOf('DATE_ENDORSED');
+
+  const pendingStatuses = ['Received', 'Pending for CL Validation', 'Pending for Consolidation/Report to Region'];
+
+  let filteredData;
+  if (searchCriteria.type === 'pending') {
+    filteredData = data.filter(row => pendingStatuses.includes(row[statusIndex]));
+  } else if (searchCriteria.type === 'hhId' && searchCriteria.value) {
+    filteredData = data.filter(row => row[hhIdIndex] === searchCriteria.value);
+  } else {
+    return [];
+  }
+
+  const results = filteredData.map(row => {
+    let obj = {};
+    headers.forEach((header, i) => {
+      const value = row[i];
+      if (value instanceof Date) {
+        obj[header] = value.toISOString(); // Standardize dates
+      } else {
+        obj[header] = value;
+      }
+    });
+
+    // Calculate Days Lapsed
+    const endorsedDate = new Date(obj.DATE_ENDORSED);
+    endorsedDate.setHours(0, 0, 0, 0);
+    if (!isNaN(endorsedDate.getTime())) {
+      const diffTime = Math.abs(today - endorsedDate);
+      obj.DAYS_LAPSED = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    } else {
+      obj.DAYS_LAPSED = null;
+    }
+    
+    return obj;
+  }).sort((a, b) => {
+    // Sort by Date Endorsed, most recent at the bottom (ascending order)
+    const dateA = new Date(a.DATE_ENDORSED).getTime();
+    const dateB = new Date(b.DATE_ENDORSED).getTime();
+    return dateA - dateB;
+  });
+
+  return results;
 }
