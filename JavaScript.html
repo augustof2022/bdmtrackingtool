@@ -1634,10 +1634,16 @@ function renderDirectivesList(directives) {
       <td><input type="text" class="dir-list-member-name" value="${dir.MEMBER_NAME || ''}"></td>
       <td><select class="dir-list-type">${generateSelectOptions(directiveTypes, dir.DIRECTIVE_TYPE, false)}</select></td>
       <td><input type="date" class="dir-list-date-endorsed" value="${endorsedDate}"></td>
-      <td><textarea class="dir-list-details" rows="1">${dir.DETAILS || ''}</textarea></td>
+      <td class="editable-field-container">
+        <div class="field-display dir-list-details-display" data-field="details">${convertTextToClickableLinks(dir.DETAILS || '')}</div>
+        <textarea class="field-edit dir-list-details" rows="1" style="display: none;">${dir.DETAILS || ''}</textarea>
+      </td>
       <td><select class="dir-list-status">${generateSelectOptions(directiveStatuses, dir.CURRENT_STATUS, false)}</select></td>
       <td><select class="dir-list-case-manager">${generateSelectOptions(caseManagers, dir.CASE_MANAGER, false)}</select></td>
-      <td><textarea class="dir-list-remarks" rows="1">${dir.REMARKS || ''}</textarea></td>
+      <td class="editable-field-container">
+        <div class="field-display dir-list-remarks-display" data-field="remarks">${convertTextToClickableLinks(dir.REMARKS || '')}</div>
+        <textarea class="field-edit dir-list-remarks" rows="1" style="display: none;">${dir.REMARKS || ''}</textarea>
+      </td>
       <td class="${daysLapsedClass}">${dir.DAYS_LAPSED}</td>
       <td><button class="btn btn-primary update-directive-btn" disabled>Save</button></td>
     </tr>`;
@@ -1645,17 +1651,112 @@ function renderDirectivesList(directives) {
 
   container.innerHTML = tableHtml + '</tbody></table>';
 
-  // Attach change listeners and resize textareas
+  // Attach change listeners and setup editable fields
   container.querySelectorAll('tr[data-directive-id]').forEach(row => {
+    // Regular input change listeners
     row.addEventListener('input', (event) => {
+      // Skip if this is coming from our editable field system
+      if (event.target.classList.contains('field-edit')) return;
+      
       const saveBtn = row.querySelector('.update-directive-btn');
       saveBtn.disabled = false;
       saveBtn.classList.remove('btn-success');
       saveBtn.classList.add('btn-actionable');
       saveBtn.textContent = 'Save';
     });
+    
+    // Setup editable fields for Details and Remarks
+    setupEditableField(row, '.dir-list-details-display', '.dir-list-details');
+    setupEditableField(row, '.dir-list-remarks-display', '.dir-list-remarks');
+    
     row.querySelectorAll('textarea').forEach(autoResizeTextarea);
   });
+}
+
+  /**
+ * Converts plain text to HTML with clickable links
+ * @param {string} text The text that may contain URLs
+ * @returns {string} HTML string with clickable links
+ */
+function convertTextToClickableLinks(text) {
+  if (!text) return '';
+  
+  // Escape HTML to prevent XSS, but keep line breaks
+  const escapedText = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\n/g, '<br>');
+  
+  // URL regex pattern to match http, https, and www links
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+  
+  return escapedText.replace(urlRegex, (url) => {
+    // Ensure the URL has a protocol
+    const href = url.startsWith('http') ? url : `http://${url}`;
+    return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="directive-link">${url}</a>`;
+  });
+}
+
+/**
+ * Sets up the editable field functionality for Details and Remarks columns
+ * @param {HTMLElement} row The table row element
+ * @param {string} displaySelector CSS selector for the display element
+ * @param {string} editSelector CSS selector for the edit textarea
+ */
+function setupEditableField(row, displaySelector, editSelector) {
+  const displayElement = row.querySelector(displaySelector);
+  const editElement = row.querySelector(editSelector);
+  
+  if (!displayElement || !editElement) return;
+  
+  // Click to edit
+  displayElement.addEventListener('click', (e) => {
+    // Don't switch to edit mode if clicking on a link
+    if (e.target.tagName.toLowerCase() === 'a') {
+      return;
+    }
+    
+    displayElement.style.display = 'none';
+    editElement.style.display = 'block';
+    editElement.focus();
+    autoResizeTextarea(editElement);
+  });
+  
+  // Save on blur or Enter key
+  const saveEdit = () => {
+    const newValue = editElement.value;
+    displayElement.innerHTML = convertTextToClickableLinks(newValue);
+    displayElement.style.display = 'block';
+    editElement.style.display = 'none';
+    
+    // Trigger change event to enable save button
+    const saveBtn = row.querySelector('.update-directive-btn');
+    saveBtn.disabled = false;
+    saveBtn.classList.remove('btn-success');
+    saveBtn.classList.add('btn-actionable');
+    saveBtn.textContent = 'Save';
+  };
+  
+  editElement.addEventListener('blur', saveEdit);
+  
+  editElement.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      saveEdit();
+    }
+    if (e.key === 'Escape') {
+      // Cancel edit - restore original value
+      editElement.value = displayElement.textContent.replace(/<br>/g, '\n');
+      displayElement.style.display = 'block';
+      editElement.style.display = 'none';
+    }
+  });
+  
+  // Auto-resize on input
+  editElement.addEventListener('input', () => autoResizeTextarea(editElement));
 }
 
 /**
