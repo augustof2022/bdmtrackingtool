@@ -1,10 +1,11 @@
 <script>
   // --- STATE MANAGEMENT ---
-  const state = {
+const state = {
     currentUser: null,
     dropdownOptions: {},
     currentView: 'login-view',
     searchResults: [],
+    mySubmissions: [], // To hold data for the "My Submissions" tab
     pendingPromises: {} // To manage async operations
   };
 
@@ -29,19 +30,29 @@
     document.getElementById('add-row-btn').addEventListener('click', addTransactionRow);
     document.getElementById('submit-batch-btn').addEventListener('click', handleSubmitBatch);
 
-    // Tab navigation listener
-    document.querySelector('.tab-nav').addEventListener('click', handleTabSwitch);
+    // Tab navigation listener (targets all tab navigations)
+    document.querySelectorAll('.tab-nav').forEach(nav => nav.addEventListener('click', handleTabSwitch));
     
-    // On-demand fetch for "My Submissions" tab
+    // On-demand fetch and other delegated listeners
     document.body.addEventListener('click', function(e) {
       if (e.target && e.target.id === 'fetch-submissions-btn') {
         loadMySubmissions();
       }
+      if (e.target && e.target.id === 'fetch-pending-directives-btn') {
+        fetchAndRenderDirectives({ type: 'pending' });
+      }
     });
+
+    // Delegated event listener for actions in the "My Submissions" table
+    // Delegated event listeners for dynamic content
+    document.getElementById('cl-submitted-container').addEventListener('click', handleMySubmissionsActions);
+    document.getElementById('directive-creator-container').addEventListener('click', handleDirectiveCreatorActions);
+    document.getElementById('directive-list-results').addEventListener('click', handleDirectiveListActions);
 
     // Search and navigation
     document.getElementById('cl-search-form').addEventListener('submit', handleSearch);
     document.getElementById('bdm-search-form').addEventListener('submit', handleSearch);
+    document.getElementById('directive-search-form').addEventListener('submit', handleDirectiveSearch);
     document.getElementById('back-to-home-btn').addEventListener('click', () => {
       // Use the robust viewType to determine the correct home view
       const homeView = (state.currentUser.viewType === 'CL_view') ? 'cl-home-view' : 'bdm-home-view';
@@ -63,7 +74,9 @@
           // Populate the registration role dropdown
           const roleSelect = document.getElementById('reg-role');
           if (roleSelect) {
-            roleSelect.innerHTML = generateSelectOptions(options.roleOptions);
+            // Add a placeholder first
+            roleSelect.innerHTML = '<option value="" disabled selected>-- Select a Role --</option>';
+            roleSelect.innerHTML += generateSelectOptions(options.roleOptions, null, false);
           }
           resolve();
         })
@@ -256,9 +269,18 @@
             <table id="transaction-table">
               <thead>
                 <tr>
-                  <th>Action</th><th>Transaction ID</th><th>HH ID</th><th>Grantee Name</th><th>Entry ID No.</th>
-                  <th>Member Name</th><th>Update Type</th><th>Field to Update</th><th>Old Value</th>
-                  <th>New Value</th><th>Req. Status</th><th>Req. Notes</th><th>Validation Link</th>
+                  <th>Action</th>
+                  <th>Transaction ID</th>
+                  <th>HH ID</th>
+                  <th>Grantee Name</th>
+                  <th>Entry ID No.</th>
+                  <th>Member Name</th>
+                  <th>Update Type</th>
+                  <th>New Value</th>
+                  <th>Req. Status</th>
+                  <th>Attachments</th>
+                  <th>Validation</th>
+                  <th>Recommendation</th>
                 </tr>
               </thead>
               <tbody id="transaction-table-body"></tbody>
@@ -284,7 +306,7 @@
       .generateNewBatchNo(state.currentUser);
   }
 
-function addTransactionRow() {
+  function addTransactionRow() {
     const tableBody = document.getElementById('transaction-table-body');
     const newRow = tableBody.insertRow();
     const batchNo = document.getElementById('batch-id-display').textContent;
@@ -310,12 +332,11 @@ function addTransactionRow() {
           <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
       </div></td>
       <td><select class="update-type">${generateSelectOptions(updateTypeOptions)}</select></td>
-      <td><textarea class="field-to-update" rows="1" placeholder="Auto-filled from Update Type" readonly></textarea></td>
-      <td><textarea class="old-value" rows="1" placeholder="Auto-filled from Update Type"></textarea></td>
       <td><textarea class="new-value" rows="1" placeholder="Auto-filled from Update Type"></textarea></td>
       <td><select class="req-status">${generateSelectOptions(['Complete', 'Incomplete', 'N/A'])}</select></td>
-      <td><textarea class="req-notes" rows="1"></textarea></td>
-      <td><input type="text" class="validation-link" placeholder="Link to doc"></td>
+      <td><textarea class="attachments" rows="1" placeholder="List of attached documents and Document link or photo scanned links"></textarea></td>
+      <td><textarea class="validation" rows="1" placeholder="Input Validation"></textarea></td>
+      <td><textarea class="recommendation" rows="1" placeholder="Input recommendation"></textarea></td>
     `;
 
     // Add event listeners for the new workflow
@@ -412,36 +433,27 @@ function addTransactionRow() {
     }
   }
 
-function handleUpdateTypeChange(event) {
+  function handleUpdateTypeChange(event) {
     const select = event.target;
     const row = select.closest('tr');
     const selectedType = select.value;
 
-    const fieldToUpdateEl = row.querySelector('.field-to-update');
-    const oldValueEl = row.querySelector('.old-value');
     const newValueEl = row.querySelector('.new-value');
 
     // Find the template object from our state
     const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
 
     if (template) {
-      fieldToUpdateEl.value = template.fieldTemplate || '';
-      oldValueEl.value = template.oldValueTemplate || '';
+      // The old fields are gone, but we still populate the new value if there's a template for it.
       newValueEl.value = template.newValueTemplate || '';
     } else {
       // Clear fields if no template is found (e.g., placeholder selected)
-      fieldToUpdateEl.value = '';
-      oldValueEl.value = '';
       newValueEl.value = '';
     }
 
-    // THIS IS THE DEFINITIVE FIX:
-    // Instead of calling the resize function directly, we programmatically dispatch an 'input' event.
-    // This reliably triggers the existing event listener that we know works when the user types.
+    // Programmatically dispatch an 'input' event to trigger auto-resizing.
     setTimeout(() => {
         const inputEvent = new Event('input', { bubbles: true });
-        fieldToUpdateEl.dispatchEvent(inputEvent);
-        oldValueEl.dispatchEvent(inputEvent);
         newValueEl.dispatchEvent(inputEvent);
     }, 0);
   }
@@ -467,12 +479,11 @@ function handleUpdateTypeChange(event) {
         entryId: row.querySelector('.entry-id').value,
         memberName: row.querySelector('.member-name').value,
         updateType: row.querySelector('.update-type').value,
-        fieldToUpdate: row.querySelector('.field-to-update').value,
-        oldValue: row.querySelector('.old-value').value,
         newValue: row.querySelector('.new-value').value,
         requirementsStatus: row.querySelector('.req-status').value,
-        requirementsNotes: row.querySelector('.req-notes').value,
-        validationLink: row.querySelector('.validation-link').value,
+        attachments: row.querySelector('.attachments').value,
+        validation: row.querySelector('.validation').value,
+        recommendation: row.querySelector('.recommendation').value
       };
 
       // Basic validation: Check for HH ID, selected member, and a selected update type.
@@ -560,8 +571,7 @@ function renderSearchResults(results) {
     const displayHeaders = [
         'BATCH_NO', 'TRANSACTION_ID', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO',
         'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE',
-        'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE',
-        'OLD_VALUE', 'NEW_VALUE'
+        'REQUIREMENTS_STATUS', 'NEW_VALUE', 'ATTACHMENTS', 'VALIDATION', 'RECOMMENDATION'
     ];
     
     const actionHeaders = [
@@ -997,30 +1007,36 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
   function handleTabSwitch(event) {
     if (!event.target.classList.contains('tab-link')) return;
 
-    const tabLinks = document.querySelectorAll('.tab-link');
-    const tabContents = document.querySelectorAll('.tab-content');
-    const targetTab = event.target.dataset.tab;
+    const nav = event.target.closest('.tab-nav');
+    const tabContainer = nav.nextElementSibling.parentNode; // The parent element holding all tab content for this nav
+
+    const tabLinks = nav.querySelectorAll('.tab-link');
+    const tabContents = tabContainer.querySelectorAll('.tab-content');
+    const targetTabId = event.target.dataset.tab;
 
     tabLinks.forEach(link => link.classList.remove('active'));
     tabContents.forEach(content => content.classList.remove('active'));
 
     event.target.classList.add('active');
-    document.getElementById(targetTab).classList.add('active');
+    const targetContent = document.getElementById(targetTabId);
+    if(targetContent) {
+      targetContent.classList.add('active');
+    }
 
-    // Data for 'My Submissions' is now loaded on-demand via a button.
+    // Initialize directive view when tab is clicked
+    if (targetTabId === 'bdm-directive-tab') {
+      initializeDirectiveView();
+    }
   }
 
-  function loadMySubmissions() {
+function loadMySubmissions() {
     const container = document.getElementById('cl-submitted-container');
     container.innerHTML = '<p>Loading your submissions...</p>';
     
     google.script.run
       .withSuccessHandler(results => {
-        if (results.length === 0) {
-          container.innerHTML = '<p>You have not submitted any transactions yet.</p>';
-          return;
-        }
-        renderReadonlyResults(results, container);
+        state.mySubmissions = results; // Store results in state
+        renderMySubmissions(); // Render the table from state
       })
       .withFailureHandler(err => {
         container.innerHTML = '<p class="error-message">Could not load submissions.</p>';
@@ -1029,7 +1045,7 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
       .getSubmittedByUser(state.currentUser);
   }
 
-  function renderClSearchResults(results) {
+function renderClSearchResults(results) {
     const container = document.getElementById('cl-search-results-container');
     if (!results || results.length === 0) {
       container.innerHTML = '<p>No matching transactions found.</p>';
@@ -1038,10 +1054,11 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
 
     // Define the full, detailed, read-only list of columns for the CL view
     const displayHeaders = [
+        'ACTION', // Added for consistency, though it will be empty here
         'BATCH_NO', 'TRANSACTION_ID', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO',
         'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE',
-        'REQUIREMENTS_STATUS', 'REQUIREMENTS_NOTES', 'VALIDATION_LINK', 'FIELD_TO_UPDATE',
-        'OLD_VALUE', 'NEW_VALUE', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'
+        'REQUIREMENTS_STATUS', 'NEW_VALUE', 'ATTACHMENTS', 'VALIDATION', 'RECOMMENDATION',
+        'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'
     ];
     
     let tableHtml = '<table class="results-table"><thead><tr>';
@@ -1057,6 +1074,11 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
       tableHtml += `<tr>`;
       // Iterate through our defined headers to ensure the correct cell order and content
       displayHeaders.forEach(header => {
+        if (header === 'ACTION') {
+            tableHtml += `<td>-</td>`; // No actions in general search
+            return;
+        }
+
         const value = row[header];
         let displayValue = value === null || value === undefined ? '' : value;
 
@@ -1076,87 +1098,167 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
     container.innerHTML = tableHtml + '</tbody></table>';
   }
 
-  function handleClTransactionUpdate(event) {
+function handleMySubmissionsActions(event) {
     const button = event.target;
-    const row = button.closest('tr');
-    
-    const transactionData = {
-      TRANSACTION_ID: row.dataset.transactionId,
-      HH_ID_NO: row.querySelector('.cl-edit-hh-id').value,
-      GRANTEE_NAME: row.querySelector('.cl-edit-grantee-name').value,
-      ENTRY_ID_NO: row.querySelector('.cl-edit-entry-id').value,
-      MEMBER_NAME: row.dataset.memberName, // Get member name from data attribute for reliability
-      UPDATE_TYPE: row.querySelector('.cl-edit-update-type').value,
-      FIELD_TO_UPDATE: row.querySelector('.cl-edit-field').value,
-      OLD_VALUE: row.querySelector('.cl-edit-old').value,
-      NEW_VALUE: row.querySelector('.cl-edit-new').value,
-      REQUIREMENTS_STATUS: row.querySelector('.cl-edit-req-status').value,
-      REQUIREMENTS_NOTES: row.querySelector('.cl-edit-req-notes').value,
-      VALIDATION_LINK: row.querySelector('.cl-edit-validation-link').value,
-    };
-    
-    showLoader(true);
-    button.disabled = true;
-    button.textContent = 'Saving...';
-    
-    google.script.run
-      .withSuccessHandler(response => {
-        showLoader(false);
-        if (response.success) {
-          alert(response.message);
-          button.textContent = 'Saved!';
-          row.style.backgroundColor = '#dff0d8';
-        } else {
-          handleError(new Error(response.message));
-          button.disabled = false;
-          button.textContent = 'Save';
+    if (button.tagName !== 'BUTTON') return;
+
+    if (button.classList.contains('delete-btn')) {
+        if (confirm('Are you sure you want to permanently delete this transaction? This cannot be undone.')) {
+            const transactionId = button.dataset.transactionId;
+            showLoader(true);
+            google.script.run
+                .withSuccessHandler(response => {
+                    showLoader(false);
+                    alert(response.message);
+                    if (response.success) {
+                        loadMySubmissions(); // Refresh the list
+                    }
+                })
+                .withFailureHandler(handleError)
+                .deleteTransactionByCL(transactionId, state.currentUser);
         }
-      })
-      .withFailureHandler(err => {
-        handleError(err);
-        button.disabled = false;
-        button.textContent = 'Save';
-      })
-      .updateTransactionByCL(transactionData, state.currentUser);
-  }
+    } else if (button.classList.contains('edit-btn')) {
+        toggleRowToEdit(button);
+    } else if (button.classList.contains('save-cl-btn')) {
+        saveClEditedRow(button);
+    } else if (button.classList.contains('cancel-cl-btn')) {
+        // Just re-render the table from the state to cancel changes
+        renderMySubmissions();
+    }
+}
+
+function saveClEditedRow(saveButton) {
+    const row = saveButton.closest('tr');
+    const transactionId = saveButton.dataset.transactionId;
+
+    // Construct the data object from the input fields in the row
+    const transactionData = {
+        TRANSACTION_ID: transactionId,
+        HH_ID_NO: row.querySelector('.cl-edit-hh-id').value,
+        GRANTEE_NAME: row.querySelector('.cl-edit-grantee-name').value,
+        ENTRY_ID_NO: row.querySelector('.cl-edit-entry-id').value,
+        MEMBER_NAME: row.querySelector('.cl-edit-member-name').value,
+        UPDATE_TYPE: row.querySelector('.cl-edit-update-type').value,
+        NEW_VALUE: row.querySelector('.cl-edit-new-value').value,
+        REQUIREMENTS_STATUS: row.querySelector('.cl-edit-req-status').value,
+        ATTACHMENTS: row.querySelector('.cl-edit-attachments').value,
+        VALIDATION: row.querySelector('.cl-edit-validation').value,
+        RECOMMENDATION: row.querySelector('.cl-edit-recommendation').value
+    };
+
+    showLoader(true);
+    google.script.run
+        .withSuccessHandler(response => {
+            showLoader(false);
+            alert(response.message);
+            if (response.success) {
+                loadMySubmissions(); // Refresh the list from the server
+            }
+        })
+        .withFailureHandler(handleError)
+        .updateTransactionByCL(transactionData, state.currentUser);
+}
+
+function toggleRowToEdit(editButton) {
+    const tr = editButton.closest('tr');
+    const rowIndex = tr.dataset.rowIndex;
+    const rowData = state.mySubmissions[rowIndex];
+
+    // These are the fields that can be edited by the CL user.
+    // The order must match the 'headers' array in renderMySubmissions.
+    const editableCells = {
+        3: { value: rowData.HH_ID_NO, className: 'cl-edit-hh-id' },
+        4: { value: rowData.GRANTEE_NAME, className: 'cl-edit-grantee-name' },
+        5: { value: rowData.MEMBER_NAME, className: 'cl-edit-member-name' },
+        6: { value: rowData.ENTRY_ID_NO, className: 'cl-edit-entry-id' },
+        7: { value: rowData.UPDATE_TYPE, className: 'cl-edit-update-type', type: 'select', options: state.dropdownOptions.updateTypeTemplates.map(t => t.updateType) },
+        8: { value: rowData.NEW_VALUE, className: 'cl-edit-new-value' },
+        9: { value: rowData.REQUIREMENTS_STATUS, className: 'cl-edit-req-status', type: 'select', options: ['Complete', 'Incomplete', 'N/A'] },
+        10: { value: rowData.ATTACHMENTS, className: 'cl-edit-attachments' },
+        11: { value: rowData.VALIDATION, className: 'cl-edit-validation' },
+        12: { value: rowData.RECOMMENDATION, className: 'cl-edit-recommendation' }
+    };
+
+    // Replace cell content with inputs/selects
+    Object.keys(editableCells).forEach(cellIndex => {
+        const cell = tr.cells[cellIndex];
+        const config = editableCells[cellIndex];
+        if (config.type === 'select') {
+            cell.innerHTML = `<select class="${config.className}">${generateSelectOptions(config.options, config.value, false)}</select>`;
+        } else {
+            cell.innerHTML = `<input type="text" class="${config.className}" value="${config.value || ''}">`;
+        }
+    });
+
+    // Update the action cell
+    tr.cells[0].innerHTML = `
+        <button class="btn btn-primary save-cl-btn" data-transaction-id="${rowData.TRANSACTION_ID}">Save</button>
+        <button class="btn btn-secondary cancel-cl-btn">Cancel</button>
+    `;
+}
 
   // A generic function to render read-only results for the "My Submissions" tab
-  function renderReadonlyResults(results, container) {
-      // Use the specific list of columns you requested for this view
+function renderMySubmissions() {
+      const container = document.getElementById('cl-submitted-container');
+      const results = state.mySubmissions;
+
+      if (!results || results.length === 0) {
+        container.innerHTML = '<p>You have not submitted any transactions yet.</p>';
+        return;
+      }
+      
+      // Define headers for the "My Submissions" view
       const headers = [
-          'BATCH_NO',
+          'ACTION',
+          'CURRENT_STATUS',
           'TRANSACTION_ID',
-          'DATE_SUBMITTED',
           'HH_ID_NO',
           'GRANTEE_NAME',
           'MEMBER_NAME',
+          'ENTRY_ID_NO',
           'UPDATE_TYPE',
-          'CURRENT_STATUS',
-          'STATUS_CHANGED_BY',
-          'DATE_STATUS_CHANGED',
-          'REMARKS'
+          'NEW_VALUE',
+          'REQUIREMENTS_STATUS',
+          'ATTACHMENTS',
+          'VALIDATION',
+          'RECOMMENDATION',
+          'REMARKS',
+          'DATE_SUBMITTED',
       ];
       
-      let tableHtml = `<table class="results-table"><thead><tr>`;
+      let tableHtml = `<table class="results-table" id="my-submissions-table"><thead><tr>`;
       headers.forEach(h => {
         tableHtml += `<th>${h.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</th>`;
       });
       tableHtml += '</tr></thead><tbody>';
 
-      results.forEach(row => {
-          tableHtml += `<tr>`;
+      results.forEach((row, index) => {
+          // Add a data attribute to the row to easily find its data later
+          tableHtml += `<tr data-row-index="${index}">`;
+          
           headers.forEach(header => {
+            if (header === 'ACTION') {
+              if (row.CURRENT_STATUS === 'Submitted') {
+                tableHtml += `
+                  <td class="action-cell" style="white-space: nowrap;">
+                    <button class="btn btn-secondary edit-btn" data-transaction-id="${row.TRANSACTION_ID}">Edit</button>
+                    <button class="btn btn-danger delete-btn" data-transaction-id="${row.TRANSACTION_ID}">Delete</button>
+                  </td>`;
+              } else {
+                tableHtml += `<td><span style="color: #777;">Processed</span></td>`;
+              }
+              return; // Continue to next header
+            }
+
             const value = row[header];
             let displayValue = value === null || value === undefined ? '' : value;
 
-            // Robust date formatting for any column that contains 'DATE'
             if (header.includes('DATE') && displayValue) {
               const d = new Date(displayValue);
               if (d instanceof Date && !isNaN(d.getTime())) {
                 displayValue = d.toLocaleString();
               }
             }
-            // Add special styling for status for emphasis
             if (header === 'CURRENT_STATUS') {
               displayValue = `<span style="font-weight: bold;">${displayValue}</span>`;
             }
@@ -1165,6 +1267,11 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
           tableHtml += `</tr>`;
       });
       container.innerHTML = tableHtml + '</tbody></table>';
+
+      const table = document.getElementById('my-submissions-table');
+      if (table) {
+        makeTableResizable(table);
+      }
   }
 
  // --- DUPLICATION LOGIC ---
@@ -1237,12 +1344,12 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
     newRow.querySelector('.member-name').innerHTML = '<option value="">-- Enter HH ID First --</option>';
     newRow.querySelector('.member-name').disabled = true;
     newRow.querySelector('.update-type').selectedIndex = 0;
-    newRow.querySelector('.field-to-update').value = '';
-    newRow.querySelector('.old-value').value = '';
     newRow.querySelector('.new-value').value = '';
     newRow.querySelector('.req-status').selectedIndex = 0;
-    newRow.querySelector('.req-notes').value = '';
-    newRow.querySelector('.validation-link').value = '';
+    newRow.querySelector('.attachments').value = '';
+    newRow.querySelector('.validation').value = '';
+    newRow.querySelector('.recommendation').value = '';
+
 
     // Re-index all rows to assign a new, correct transaction ID
     reIndexRows();
@@ -1282,14 +1389,331 @@ function generateSelectOptions(options, selectedValue, includePlaceholder = true
 
     // Clear only the transaction-specific fields
     newRow.querySelector('.update-type').selectedIndex = 0;
-    newRow.querySelector('.field-to-update').value = '';
-    newRow.querySelector('.old-value').value = '';
     newRow.querySelector('.new-value').value = '';
     newRow.querySelector('.req-status').selectedIndex = 0;
-    newRow.querySelector('.req-notes').value = '';
-    newRow.querySelector('.validation-link').value = '';
+    newRow.querySelector('.attachments').value = '';
+    newRow.querySelector('.validation').value = '';
+    newRow.querySelector('.recommendation').value = '';
 
     // Re-index all rows to assign a new, correct transaction ID
     reIndexRows();
   }
+
+  // --- REGIONAL DIRECTIVE LOGIC ---
+
+/**
+ * Initializes the directive view by fetching a new ID and rendering the creator form.
+ * This function now ALWAYS rebuilds the form to ensure it's fresh.
+ */
+function initializeDirectiveView() {
+  const container = document.getElementById('directive-creator-container');
+  
+  // This function is now designed to run every time, so we don't check if the form exists.
+  // We start by showing a loading message to indicate a refresh.
+  container.innerHTML = '<p>Loading directive creator...</p>';
+  showLoader(true);
+
+  google.script.run
+    .withSuccessHandler(newDirectiveId => {
+      showLoader(false);
+      renderDirectiveCreator(newDirectiveId);
+    })
+    .withFailureHandler(err => {
+      showLoader(false);
+      container.innerHTML = `<p class="error-message">Could not initialize directive creator: ${err.message}</p>`;
+    })
+    .generateNewDirectiveId(state.currentUser);
+}
+
+/**
+ * Renders the HTML form for creating a new directive.
+ * @param {string} directiveId The new ID to use for the directive.
+ */
+function renderDirectiveCreator(directiveId) {
+  const container = document.getElementById('directive-creator-container');
+  const { directiveTypes, directiveStatuses, caseManagers } = state.dropdownOptions;
+  
+  container.innerHTML = `
+    <h2>Create New Regional Directive</h2>
+    <form id="directive-creator-form">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Directive ID</label>
+          <input type="text" id="dir-id" value="${directiveId}" readonly>
+        </div>
+        <div class="form-group">
+          <label for="dir-hh-id">Household ID No.</label>
+          <input type="text" id="dir-hh-id" required>
+        </div>
+        <div class="form-group">
+          <label for="dir-grantee-name">Grantee Name</label>
+          <input type="text" id="dir-grantee-name" required>
+        </div>
+        <div class="form-group">
+          <label for="dir-entry-id">Entry ID</label>
+          <input type="text" id="dir-entry-id">
+        </div>
+        <div class="form-group">
+          <label for="dir-member-name">Member Name</label>
+          <input type="text" id="dir-member-name">
+        </div>
+        <div class="form-group">
+          <label for="dir-type">Directive Type</label>
+          <select id="dir-type" required>${generateSelectOptions(directiveTypes, null, true)}</select>
+        </div>
+        <div class="form-group">
+          <label for="dir-date-endorsed">Date Endorsed from Region</label>
+          <input type="date" id="dir-date-endorsed" required>
+        </div>
+        <div class="form-group">
+          <label for="dir-status">Directive Current Status</label>
+          <select id="dir-status" required>${generateSelectOptions(directiveStatuses, null, true)}</select>
+        </div>
+        <div class="form-group">
+          <label for="dir-case-manager">Case Manager</label>
+          <select id="dir-case-manager" required>${generateSelectOptions(caseManagers, null, true)}</select>
+        </div>
+        <div class="form-group full-width">
+          <label for="dir-details">Details</label>
+          <textarea id="dir-details" rows="1"></textarea>
+        </div>
+        <div class="form-group full-width">
+          <label for="dir-remarks">Remarks</label>
+          <textarea id="dir-remarks" rows="1"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" id="save-new-directive-btn" class="btn btn-primary" disabled>Save New Directive</button>
+      </div>
+    </form>
+  `;
+
+  // Attach a more robust listener to the form
+  const form = document.getElementById('directive-creator-form');
+  form.addEventListener('input', (event) => {
+    // Enable save button logic
+    const saveBtn = document.getElementById('save-new-directive-btn');
+    saveBtn.disabled = false;
+    saveBtn.classList.add('btn-actionable');
+    saveBtn.classList.remove('btn-success');
+    saveBtn.textContent = 'Save New Directive';
+
+    // Auto-resize any textarea that triggered the input event
+    if (event.target.tagName.toLowerCase() === 'textarea') {
+      autoResizeTextarea(event.target);
+    }
+  });
+
+  // Set initial size for textareas upon creation
+  form.querySelectorAll('textarea').forEach(autoResizeTextarea);
+}
+
+/**
+ * Handles actions within the directive creator form, primarily saving.
+ * @param {Event} event The click event.
+ */
+function handleDirectiveCreatorActions(event) {
+  if (event.target.id === 'save-new-directive-btn') {
+    event.preventDefault();
+    const button = event.target;
+    const form = document.getElementById('directive-creator-form');
+    if (!form.checkValidity()) {
+      alert('Please fill out all required fields.');
+      form.reportValidity();
+      return;
+    }
+
+    const directiveData = {
+      DIRECTIVE_ID: document.getElementById('dir-id').value,
+      HOUSEHOLD_ID: document.getElementById('dir-hh-id').value,
+      GRANTEE_NAME: document.getElementById('dir-grantee-name').value,
+      ENTRY_ID: document.getElementById('dir-entry-id').value,
+      MEMBER_NAME: document.getElementById('dir-member-name').value,
+      DIRECTIVE_TYPE: document.getElementById('dir-type').value,
+      DATE_ENDORSED: document.getElementById('dir-date-endorsed').value,
+      DETAILS: document.getElementById('dir-details').value,
+      CURRENT_STATUS: document.getElementById('dir-status').value,
+      CASE_MANAGER: document.getElementById('dir-case-manager').value, // ADDED
+      REMARKS: document.getElementById('dir-remarks').value
+    };
+
+    showLoader(true);
+    button.disabled = true;
+    button.textContent = 'Saving...';
+    
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          button.classList.remove('btn-actionable');
+          button.classList.add('btn-success');
+          button.textContent = 'Saved Successfully!';
+          alert('Directive saved successfully.');
+          // Reset form for the next entry
+          initializeDirectiveView(); 
+        } else {
+          button.disabled = false;
+          button.classList.add('btn-actionable');
+          button.textContent = 'Save New Directive';
+          handleError(new Error('Server failed to save directive.'));
+        }
+      })
+      .withFailureHandler(err => {
+        showLoader(false);
+        button.disabled = false;
+        button.classList.add('btn-actionable');
+        button.textContent = 'Save New Directive';
+        handleError(err);
+      })
+      .saveOrUpdateDirective(directiveData, state.currentUser);
+  }
+}
+
+/**
+ * Handles the search form submission for directives.
+ * @param {Event} event The form submission event.
+ */
+function handleDirectiveSearch(event) {
+  event.preventDefault();
+  const hhId = document.getElementById('directive-search-input').value;
+  if (!hhId) {
+    alert('Please enter a Household ID to search.');
+    return;
+  }
+  fetchAndRenderDirectives({ type: 'hhId', value: hhId });
+}
+
+/**
+ * Fetches directives from the server and renders them in the list.
+ * @param {object} criteria The search criteria for the server.
+ */
+function fetchAndRenderDirectives(criteria) {
+  const container = document.getElementById('directive-list-results');
+  container.innerHTML = '<p>Loading directives...</p>';
+  showLoader(true);
+
+  google.script.run
+    .withSuccessHandler(directives => {
+      showLoader(false);
+      renderDirectivesList(directives);
+    })
+    .withFailureHandler(err => {
+      showLoader(false);
+      container.innerHTML = `<p class="error-message">Could not load directives: ${err.message}</p>`;
+    })
+    .getDirectives(criteria);
+}
+
+/**
+ * Renders the list of directives in an editable table.
+ * @param {Array<object>} directives The array of directive objects from the server.
+ */
+function renderDirectivesList(directives) {
+  const container = document.getElementById('directive-list-results');
+  if (!directives || directives.length === 0) {
+    container.innerHTML = '<p>No directives found.</p>';
+    return;
+  }
+
+  const { directiveTypes, directiveStatuses, caseManagers } = state.dropdownOptions;
+  const headers = ['HH ID', 'Grantee Name', 'Member Name', 'Directive Type', 'Date Endorsed', 'Details', 'Current Status', 'Case Manager', 'Remarks', "Day's Lapsed", 'Action'];
+  
+  let tableHtml = '<table class="results-table"><thead><tr>';
+  headers.forEach(h => tableHtml += `<th>${h}</th>`);
+  tableHtml += '</tr></thead><tbody>';
+
+  directives.forEach(dir => {
+    const endorsedDate = new Date(dir.DATE_ENDORSED).toISOString().split('T')[0];
+    let daysLapsedClass = 'days-lapsed-green';
+    if (dir.DAYS_LAPSED >= 20) daysLapsedClass = 'days-lapsed-red';
+    else if (dir.DAYS_LAPSED >= 10) daysLapsedClass = 'days-lapsed-yellow';
+    
+    tableHtml += `<tr data-directive-id="${dir.DIRECTIVE_ID}">
+      <td><input type="text" class="dir-list-hh-id" value="${dir.HOUSEHOLD_ID || ''}"></td>
+      <td><input type="text" class="dir-list-grantee-name" value="${dir.GRANTEE_NAME || ''}"></td>
+      <td><input type="text" class="dir-list-member-name" value="${dir.MEMBER_NAME || ''}"></td>
+      <td><select class="dir-list-type">${generateSelectOptions(directiveTypes, dir.DIRECTIVE_TYPE, false)}</select></td>
+      <td><input type="date" class="dir-list-date-endorsed" value="${endorsedDate}"></td>
+      <td><textarea class="dir-list-details" rows="1">${dir.DETAILS || ''}</textarea></td>
+      <td><select class="dir-list-status">${generateSelectOptions(directiveStatuses, dir.CURRENT_STATUS, false)}</select></td>
+      <td><select class="dir-list-case-manager">${generateSelectOptions(caseManagers, dir.CASE_MANAGER, false)}</select></td>
+      <td><textarea class="dir-list-remarks" rows="1">${dir.REMARKS || ''}</textarea></td>
+      <td class="${daysLapsedClass}">${dir.DAYS_LAPSED}</td>
+      <td><button class="btn btn-primary update-directive-btn" disabled>Save</button></td>
+    </tr>`;
+  });
+
+  container.innerHTML = tableHtml + '</tbody></table>';
+
+  // Attach change listeners and resize textareas
+  container.querySelectorAll('tr[data-directive-id]').forEach(row => {
+    row.addEventListener('input', (event) => {
+      const saveBtn = row.querySelector('.update-directive-btn');
+      saveBtn.disabled = false;
+      saveBtn.classList.remove('btn-success');
+      saveBtn.classList.add('btn-actionable');
+      saveBtn.textContent = 'Save';
+    });
+    row.querySelectorAll('textarea').forEach(autoResizeTextarea);
+  });
+}
+
+/**
+ * Handles actions in the directive list table, specifically updating a row.
+ * @param {Event} event The click event.
+ */
+function handleDirectiveListActions(event) {
+  if (event.target.classList.contains('update-directive-btn')) {
+    event.preventDefault();
+    const button = event.target;
+    const row = button.closest('tr');
+    const directiveId = row.dataset.directiveId;
+
+    const directiveData = {
+      DIRECTIVE_ID: directiveId,
+      HOUSEHOLD_ID: row.querySelector('.dir-list-hh-id').value,
+      GRANTEE_NAME: row.querySelector('.dir-list-grantee-name').value,
+      MEMBER_NAME: row.querySelector('.dir-list-member-name').value,
+      DIRECTIVE_TYPE: row.querySelector('.dir-list-type').value,
+      DATE_ENDORSED: row.querySelector('.dir-list-date-endorsed').value,
+      DETAILS: row.querySelector('.dir-list-details').value,
+      CURRENT_STATUS: row.querySelector('.dir-list-status').value,
+      CASE_MANAGER: row.querySelector('.dir-list-case-manager').value, // ADDED
+      REMARKS: row.querySelector('.dir-list-remarks').value
+    };
+
+    showLoader(true);
+    button.disabled = true;
+    button.textContent = 'Saving...';
+    
+    google.script.run
+      .withSuccessHandler(response => {
+        showLoader(false);
+        if (response.success) {
+          button.classList.remove('btn-actionable');
+          button.classList.add('btn-success');
+          button.textContent = 'Saved!';
+          // Re-disable after a delay
+          setTimeout(() => {
+            button.disabled = true;
+            button.classList.remove('btn-success');
+            button.textContent = 'Save';
+          }, 2500);
+        } else {
+          handleError(new Error('Server failed to update directive.'));
+          button.disabled = false;
+          button.classList.add('btn-actionable');
+          button.textContent = 'Save';
+        }
+      })
+      .withFailureHandler(err => {
+        showLoader(false);
+        handleError(err);
+        button.disabled = false;
+        button.classList.add('btn-actionable');
+        button.textContent = 'Save';
+      })
+      .saveOrUpdateDirective(directiveData, state.currentUser);
+  }
+}
 </script>
