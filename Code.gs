@@ -594,32 +594,52 @@ function updateTransactionStatus(transactionId, newStatus, remarks, userInfo) {
     const headers = data[0];
     const idColIndex = headers.indexOf('TRANSACTION_ID');
     const statusColIndex = headers.indexOf('CURRENT_STATUS');
+    const remarksColIndex = headers.indexOf('REMARKS');
     
     for (let i = 1; i < data.length; i++) {
       if (data[i][idColIndex] === transactionId) {
         const oldStatus = data[i][statusColIndex];
+        const oldRemarks = data[i][remarksColIndex] || '';
         const rowToUpdate = i + 1;
 
-        // Prevent logging if the status hasn't actually changed
-        if (oldStatus === newStatus) {
-            return { success: false, message: 'Status is already set to ' + newStatus };
+        // Check if anything has actually changed
+        const statusChanged = oldStatus !== newStatus;
+        const remarksChanged = oldRemarks !== remarks;
+        
+        if (!statusChanged && !remarksChanged) {
+            return { success: false, message: 'No changes detected.' };
         }
 
+        // Update the fields
         transactionsSheet.getRange(rowToUpdate, statusColIndex + 1).setValue(newStatus);
-        transactionsSheet.getRange(rowToUpdate, headers.indexOf('REMARKS') + 1).setValue(remarks);
+        transactionsSheet.getRange(rowToUpdate, remarksColIndex + 1).setValue(remarks);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('STATUS_CHANGED_BY') + 1).setValue(userInfo.fullName);
         transactionsSheet.getRange(rowToUpdate, headers.indexOf('DATE_STATUS_CHANGED') + 1).setValue(new Date());
 
-        // Use the new, structured logging function for the history sheet
-        logTransactionHistory_(transactionId, userInfo.email, oldStatus, newStatus, remarks);
+        // Log the change in history - only if status actually changed
+        if (statusChanged) {
+          logTransactionHistory_(transactionId, userInfo.email, oldStatus, newStatus, remarks);
+        } else {
+          // If only remarks changed, we could optionally log this differently
+          logActivity_('REMARKS_UPDATE', `Remarks updated for transaction ${transactionId} by ${userInfo.email}`);
+        }
 
-        return { success: true, message: `Transaction ${transactionId} updated.` };
+        let message = 'Transaction ' + transactionId + ' updated: ';
+        if (statusChanged && remarksChanged) {
+          message += 'Status and remarks changed.';
+        } else if (statusChanged) {
+          message += 'Status changed.';
+        } else if (remarksChanged) {
+          message += 'Remarks updated.';
+        }
+
+        return { success: true, message: message };
       }
     }
     throw new Error('Transaction ID not found.');
   } catch(e) {
     Logger.log(`Error in updateTransactionStatus: ${e}`);
-    throw new Error('Failed to update transaction status.');
+    throw new Error('Failed to update transaction.');
   }
 }
 
