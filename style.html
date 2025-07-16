@@ -85,7 +85,16 @@
     background-color: #40FF7F; /* Light Green /
     color: #000000; / Darker green text for contrast */
     }
-
+  .btn.btn-danger {
+    background-color: #d9534f;
+    color: white;
+  }
+  .btn.btn-danger:hover {
+    background-color: #c9302c;
+  }
+  .results-table td.action-cell .btn {
+      margin-right: 5px;
+  }
   /* --- Tables --- */
   #results-table-container { overflow-x: auto; }
   .results-table { border-collapse: collapse; width: 100%; margin-top: 20px; background: white; }
@@ -259,12 +268,11 @@
   #transaction-table th:nth-child(5)  { width: 130px; } /* Entry ID No. */
   #transaction-table th:nth-child(6)  { width: 220px; } /* Member Name */
   #transaction-table th:nth-child(7)  { width: 180px; } /* Update Type */
-  #transaction-table th:nth-child(8)  { width: 200px; } /* Field to Update */
-  #transaction-table th:nth-child(9)  { width: 200px; } /* Old Value */
-  #transaction-table th:nth-child(10) { width: 300px; } /* New Value */
-  #transaction-table th:nth-child(11) { width: 150px; } /* Req. Status */
-  #transaction-table th:nth-child(12) { width: 300px; } /* Req. Notes */
-  #transaction-table th:nth-child(13) { width: 200px; } /* Validation Link */
+  #transaction-table th:nth-child(8)  { width: 250px; } /* New Value */
+  #transaction-table th:nth-child(9) { width: 150px; } /* Req. Status */
+  #transaction-table th:nth-child(10) { width: 300px; } /* Attachments */
+  #transaction-table th:nth-child(11) { width: 300px; } /* Validation */
+  #transaction-table th:nth-child(12) { width: 300px; } /* Recommendation */
 
   #transaction-table td textarea {
     min-height: 22px; /* A good single-line height with padding */
@@ -287,7 +295,7 @@
     /* --- BDM/Admin Search Results Table Layout --- */
   #search-results-view .results-table {
     table-layout: fixed;
-    min-width: 3800px; /* Provide a large min-width for horizontal scrolling */
+    min-width: 4000px; /* Provide a large min-width for horizontal scrolling */
   }
 
   /* Set default widths for each column in the BDM search results view */
@@ -302,16 +310,15 @@
   #search-results-view .results-table th:nth-child(9)  { width: 160px; } /* Case Manager */
   #search-results-view .results-table th:nth-child(10) { width: 180px; } /* Update Type */
   #search-results-view .results-table th:nth-child(11) { width: 150px; } /* Req. Status */
-  #search-results-view .results-table th:nth-child(12) { width: 250px; } /* Req. Notes */
-  #search-results-view .results-table th:nth-child(13) { width: 200px; } /* Validation Link */
-  #search-results-view .results-table th:nth-child(14) { width: 250px; } /* Field to Update */
-  #search-results-view .results-table th:nth-child(15) { width: 250px; } /* Old Value */
-  #search-results-view .results-table th:nth-child(16) { width: 250px; } /* New Value */
-  #search-results-view .results-table th:nth-child(17) { width: 160px; } /* Current Status */
-  #search-results-view .results-table th:nth-child(18) { width: 250px; } /* Remarks */
-  #search-results-view .results-table th:nth-child(19) { width: 160px; } /* Status Changed By */
-  #search-results-view .results-table th:nth-child(20) { width: 150px; } /* Date Status Changed */
-  #search-results-view .results-table th:nth-child(21) { width: 90px;  } /* Action */
+  #search-results-view .results-table th:nth-child(12) { width: 250px; } /* New Value */
+  #search-results-view .results-table th:nth-child(13) { width: 250px; } /* Attachments */
+  #search-results-view .results-table th:nth-child(14) { width: 250px; } /* Validation */
+  #search-results-view .results-table th:nth-child(15) { width: 250px; } /* Recommendation */
+  #search-results-view .results-table th:nth-child(16) { width: 160px; } /* Current Status */
+  #search-results-view .results-table th:nth-child(17) { width: 250px; } /* Remarks */
+  #search-results-view .results-table th:nth-child(18) { width: 160px; } /* Status Changed By */
+  #search-results-view .results-table th:nth-child(19) { width: 150px; } /* Date Status Changed */
+  #search-results-view .results-table th:nth-child(20) { width: 90px;  } /* Action */
 
   #search-results-view .results-table td textarea {
     resize: none;
@@ -323,7 +330,7 @@
   /* --- CL Search Results Table Layout --- */
   #cl-search-results-container .results-table {
     table-layout: fixed;
-    min-width: 3800px; /* Provide a large min-width for horizontal scrolling */
+    min-width: 4200px; /* Provide a large min-width for horizontal scrolling */
   }
 
   /* Set default widths for each column in the CL search results view */
@@ -338,15 +345,14 @@
   #cl-search-results-container .results-table th:nth-child(9)  { width: 160px; } /* Case Manager */
   #cl-search-results-container .results-table th:nth-child(10) { width: 180px; } /* Update Type */
   #cl-search-results-container .results-table th:nth-child(11) { width: 150px; } /* Req. Status */
-  #cl-search-results-container .results-table th:nth-child(12) { width: 250px; } /* Req. Notes */
-  #cl-search-results-container .results-table th:nth-child(13) { width: 200px; } /* Validation Link */
-  #cl-search-results-container .results-table th:nth-child(14) { width: 250px; } /* Field to Update */
-  #cl-search-results-container .results-table th:nth-child(15) { width: 250px; } /* Old Value */
-  #cl-search-results-container .results-table th:nth-child(16) { width: 250px; } /* New Value */
-  #cl-search-results-container .results-table th:nth-child(17) { width: 160px; } /* Current Status */
-  #cl-search-results-container .results-table th:nth-child(18) { width: 160px; } /* Status Changed By */
-  #cl-search-results-container .results-table th:nth-child(19) { width: 150px; } /* Date Status Changed */
-  #cl-search-results-container .results-table th:nth-child(20) { width: 250px; } /* Remarks */
+  #cl-search-results-container .results-table th:nth-child(12) { width: 250px; } /* New Value */
+  #cl-search-results-container .results-table th:nth-child(13) { width: 250px; } /* Attachments */
+  #cl-search-results-container .results-table th:nth-child(14) { width: 250px; } /* Validation */
+  #cl-search-results-container .results-table th:nth-child(15) { width: 250px; } /* Recommendation */
+  #cl-search-results-container .results-table th:nth-child(16) { width: 160px; } /* Current Status */
+  #cl-search-results-container .results-table th:nth-child(17) { width: 160px; } /* Status Changed By */
+  #cl-search-results-container .results-table th:nth-child(18) { width: 150px; } /* Date Status Changed */
+  #cl-search-results-container .results-table th:nth-child(19) { width: 250px; } /* Remarks */
 
     /* --- Tab Navigation --- */
   .tab-nav {
@@ -428,5 +434,106 @@
   .modal-body ol {
       padding-left: 25px; /* Better indentation */
       line-height: 1.6;
+  }
+
+    /* --- My Submissions Table Layout --- */
+  #my-submissions-table {
+    table-layout: fixed;
+    min-width: 2500px;
+  }
+  #my-submissions-table th:nth-child(1)  { width: 140px; } /* Action */
+  #my-submissions-table th:nth-child(2)  { width: 140px; } /* Current Status */
+  #my-submissions-table th:nth-child(3)  { width: 150px; } /* Transaction ID */
+  #my-submissions-table th:nth-child(4)  { width: 130px; } /* HH ID */
+  #my-submissions-table th:nth-child(5)  { width: 220px; } /* Grantee Name */
+  #my-submissions-table th:nth-child(6)  { width: 220px; } /* Member Name */
+  #my-submissions-table th:nth-child(7)  { width: 130px; } /* Entry ID */
+  #my-submissions-table th:nth-child(8)  { width: 180px; } /* Update Type */
+  #my-submissions-table th:nth-child(9) { width: 250px; } /* New Value */
+  #my-submissions-table th:nth-child(10) { width: 150px; } /* Req. Status */
+  #my-submissions-table th:nth-child(11) { width: 250px; } /* Attachments */
+  #my-submissions-table th:nth-child(12) { width: 250px; } /* Validation */
+  #my-submissions-table th:nth-child(13) { width: 250px; } /* Recommendation */
+  #my-submissions-table th:nth-child(14) { width: 250px; } /* Remarks */
+  #my-submissions-table th:nth-child(15) { width: 150px; } /* Date Submitted */
+
+  #my-submissions-table td input,
+  #my-submissions-table td select {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* --- Directive Styles --- */
+  .days-lapsed-red {
+    color: var(--error-color);
+    font-weight: bold;
+  }
+  .days-lapsed-yellow {
+    color: #f0ad4e; /* A visible warning yellow */
+    font-weight: bold;
+  }
+  .days-lapsed-green {
+    color: var(--success-color);
+  }
+  #directive-creator-form .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 15px;
+  }
+  #directive-creator-form .form-group.full-width {
+    grid-column: 1 / -1;
+  }
+
+  /* --- REFINEMENT: Fix Ugly Date Input --- */
+  /* This rule makes the date input match the text inputs exactly. */
+  #directive-creator-form input[type="date"] {
+    height: 40px; /* Explicitly sets height to match text inputs */
+    line-height: 1.4; /* Aligns text vertically */
+    padding: 10px; /* Matches text input padding */
+    background-color: #fff;
+    font-family: var(--font-family);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  
+  /* --- REFINEMENT: Fix Directive List Table Layout --- */
+  #directive-list-results .results-table {
+    table-layout: fixed;
+    min-width: 2200px; /* Forces horizontal scroll on smaller viewports */
+  }
+  
+  /* CORRECTED widths for each column for a clean layout */
+  #directive-list-results .results-table th:nth-child(1)  { width: 220px; } /* HH ID */
+  #directive-list-results .results-table th:nth-child(2)  { width: 250px; } /* Grantee Name */
+  #directive-list-results .results-table th:nth-child(3)  { width: 250px; } /* Member Name */
+  #directive-list-results .results-table th:nth-child(4)  { width: 250px; } /* Directive Type */
+  #directive-list-results .results-table th:nth-child(5)  { width: 150px; } /* Date Endorsed */
+  #directive-list-results .results-table th:nth-child(6)  { width: 350px; } /* Details */
+  #directive-list-results .results-table th:nth-child(7)  { width: 250px; } /* Current Status */
+  #directive-list-results .results-table th:nth-child(8)  { width: 250px; } /* Case Manager */
+  #directive-list-results .results-table th:nth-child(9)  { width: 350px; } /* Remarks */
+  #directive-list-results .results-table th:nth-child(10) { width: 110px; } /* Day's Lapsed */
+  #directive-list-results .results-table th:nth-child(11) { width: 90px;  } /* Action */
+
+  /* This is the key fix for the expanding textareas in the table */
+  #directive-list-results .results-table td textarea {
+    width: 100%;
+    box-sizing: border-box;
+    display: block; /* Ensures it behaves correctly within the cell */
+    border: none;
+    background-color: transparent;
+    padding: 0;
+    margin: 0;
+    font-family: var(--font-family); /* Inherit font */
+    font-size: 1rem; /* Inherit font size */
+    line-height: 1.4; /* Inherit line height */
+    min-height: 24px;
+  }
+
+  #directive-list-results .results-table td textarea:focus {
+    outline: none;
+    background-color: #f0f8ff;
   }
 </style>
