@@ -23,14 +23,14 @@ let directivesSheet = ss.getSheetByName('Directives'); // NEW
  * 4. A summary of actions will appear.
  */
 function setupSpreadsheet() {
-  const sheetConfigs = {
+const sheetConfigs = {
     'Transactions': ['TRANSACTION_ID', 'BATCH_NO', 'DATE_SUBMITTED', 'SUBMITTED_BY', 'HH_ID_NO', 'GRANTEE_NAME', 'ENTRY_ID_NO', 'MEMBER_NAME', 'CASE_MANAGER', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS', 'NEW_VALUE', 'ATTACHMENTS', 'VALIDATION', 'RECOMMENDATION', 'CURRENT_STATUS', 'STATUS_CHANGED_BY', 'DATE_STATUS_CHANGED', 'REMARKS'],
     'Users': ['EmailAddress', 'Password', 'FullName', 'Role', 'AreaName', 'ApprovalStatus', 'UserCode'],
     'ActivityLog': ['LOG_ID', 'TIMESTAMP', 'USER_EMAIL', 'ACTION_TYPE', 'DETAILS'],
     'TransactionHistory': ['HISTORY_ID', 'TRANSACTION_ID', 'TIMESTAMP', 'USER_EMAIL', 'PREVIOUS_STATUS', 'NEW_STATUS', 'REMARKS'],
-    'Dropdowns': ['CaseManagers', 'UpdateTypes', 'FieldToUpdateTemplate', 'OldValueTemplate', 'NewValueTemplate', 'StatusOptions', 'Roles', 'ViewTypes', 'DirectiveType', 'DirectiveStatus'], // ADDED Directive Columns
+    'Dropdowns': ['CaseManagers', 'UpdateTypes', 'FieldToUpdateTemplate', 'OldValueTemplate', 'NewValueTemplate', 'StatusOptions', 'Roles', 'ViewTypes', 'DirectiveType', 'DirectiveStatus', 'RequiredFields'], // ADDED RequiredFields
     'GranteeData': ['HH_ID', 'GranteeFullName', 'EntryID', 'MemberFullName'],
-    'Directives': ['DIRECTIVE_ID', 'HOUSEHOLD_ID', 'GRANTEE_NAME', 'ENTRY_ID', 'MEMBER_NAME', 'DIRECTIVE_TYPE', 'DATE_ENDORSED', 'DETAILS', 'CURRENT_STATUS', 'CASE_MANAGER', 'REMARKS', 'DATE_UPDATED', 'UPDATED_BY'] // NEW Directives Sheet with CASE_MANAGER
+    'Directives': ['DIRECTIVE_ID', 'HOUSEHOLD_ID', 'GRANTEE_NAME', 'ENTRY_ID', 'MEMBER_NAME', 'DIRECTIVE_TYPE', 'DATE_ENDORSED', 'DETAILS', 'CURRENT_STATUS', 'CASE_MANAGER', 'REMARKS', 'DATE_UPDATED', 'UPDATED_BY']
   };
 
   const sheetNames = Object.keys(sheetConfigs);
@@ -233,28 +233,32 @@ function getDropdownOptions() {
   const newTemplateIndex = headers.indexOf('NewValueTemplate');
   const statusOptionsIndex = headers.indexOf('StatusOptions');
   const rolesIndex = headers.indexOf('Roles');
-  const directiveTypeIndex = headers.indexOf('DirectiveType'); // NEW
-  const directiveStatusIndex = headers.indexOf('DirectiveStatus'); // NEW
-
+  const requiredFieldsIndex = headers.indexOf('RequiredFields'); // NEW
+  const directiveTypeIndex = headers.indexOf('DirectiveType');
+  const directiveStatusIndex = headers.indexOf('DirectiveStatus');
 
   const options = {
     updateTypeTemplates: [],
     statusOptions: [],
     caseManagers: [],
     roleOptions: [],
-    directiveTypes: [], // NEW
-    directiveStatuses: [] // NEW
+    directiveTypes: [],
+    directiveStatuses: []
   };
 
   data.forEach(row => {
-    // Populate Update Type templates
+    // Populate Update Type templates with required fields
     const updateType = row[updateTypeIndex];
     if (updateType && String(updateType).trim() !== '') {
+      const requiredFields = requiredFieldsIndex !== -1 ? row[requiredFieldsIndex] : '';
+      const requiredFieldsArray = requiredFields ? requiredFields.split(',').map(f => f.trim()) : [];
+      
       options.updateTypeTemplates.push({
         updateType: updateType,
         fieldTemplate: row[fieldTemplateIndex] || '',
         oldValueTemplate: row[oldTemplateIndex] || '',
-        newValueTemplate: row[newTemplateIndex] || ''
+        newValueTemplate: row[newTemplateIndex] || '',
+        requiredFields: requiredFieldsArray // NEW
       });
     }
 
@@ -276,7 +280,7 @@ function getDropdownOptions() {
       options.roleOptions.push(roleOption);
     }
 
-    // Populate Directive Type Options (NEW)
+    // Populate Directive Type Options
     if (directiveTypeIndex !== -1) {
       const directiveType = row[directiveTypeIndex];
       if (directiveType && String(directiveType).trim() !== '') {
@@ -284,7 +288,7 @@ function getDropdownOptions() {
       }
     }
 
-    // Populate Directive Status Options (NEW)
+    // Populate Directive Status Options
     if (directiveStatusIndex !== -1) {
       const directiveStatus = row[directiveStatusIndex];
       if (directiveStatus && String(directiveStatus).trim() !== '') {
