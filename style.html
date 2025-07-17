@@ -268,7 +268,7 @@
   #transaction-table th:nth-child(5)  { width: 130px; } /* Entry ID No. */
   #transaction-table th:nth-child(6)  { width: 220px; } /* Member Name */
   #transaction-table th:nth-child(7)  { width: 180px; } /* Update Type */
-  #transaction-table th:nth-child(8)  { width: 250px; } /* New Value */
+  #transaction-table th:nth-child(8)  { width: 550px; } /* New Value */
   #transaction-table th:nth-child(9) { width: 150px; } /* Req. Status */
   #transaction-table th:nth-child(10) { width: 300px; } /* Attachments */
   #transaction-table th:nth-child(11) { width: 300px; } /* Validation */
@@ -636,5 +636,41 @@ flex-shrink: 0; /* Prevent button from shrinking */
 .copy-btn:hover {
 background-color: #e2e2e2;
 border-color: #999;
+}
+
+/* --- Mini-Form in New Value Cell --- */
+.new-value-cell {
+  vertical-align: middle; /* Better vertical alignment for form elements */
+}
+.new-value-cell div {
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+}
+.new-value-cell div:last-child {
+  margin-bottom: 0;
+}
+.new-value-cell label {
+  margin-right: 8px;
+  font-weight: normal;
+  color: #333;
+  white-space: nowrap;
+}
+.new-value-cell input[type="text"] {
+  flex-grow: 1; /* Make input take remaining space */
+  min-width: 120px;
+  padding: 4px 6px;
+  font-size: 0.9rem;
+  border-radius: 3px;
+}
+.new-value-cell .instruction-text {
+  font-style: italic;
+  color: #666;
+  font-size: 0.9rem;
+  padding: 4px 0;
+}
+.new-value-cell .placeholder-text {
+  color: #888;
+  font-style: italic;
 }
 </style>
