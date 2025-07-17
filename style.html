@@ -303,7 +303,7 @@
   #search-results-view .results-table th:nth-child(2)  { width: 150px; } /* Transaction ID */
   #search-results-view .results-table th:nth-child(3)  { width: 150px; } /* Date Submitted */
   #search-results-view .results-table th:nth-child(4)  { width: 160px; } /* Submitted By */
-  #search-results-view .results-table th:nth-child(5)  { width: 130px; } /* HH ID */
+  #search-results-view .results-table th:nth-child(5)  { width: 250px; } /* HH ID */
   #search-results-view .results-table th:nth-child(6)  { width: 220px; } /* Grantee Name */
   #search-results-view .results-table th:nth-child(7)  { width: 130px; } /* Entry ID */
   #search-results-view .results-table th:nth-child(8)  { width: 220px; } /* Member Name */
@@ -354,44 +354,45 @@
   #cl-search-results-container .results-table th:nth-child(18) { width: 150px; } /* Date Status Changed */
   #cl-search-results-container .results-table th:nth-child(19) { width: 250px; } /* Remarks */
 
+
 /* --- Editable Fields for Directives --- */
 .editable-field-container {
   position: relative;
-  min-height: 24px;
 }
 
 .field-display {
-  min-height: 20px;
-  padding: 4px;
+  min-height: 24px;
+  padding: 8px 6px;
   cursor: text;
+  border-radius: 4px;
   border: 1px solid transparent;
-  border-radius: 3px;
-  transition: border-color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
   line-height: 1.4;
   word-break: break-word;
 }
 
+/* This is the key change: provides a clear visual cue on hover */
 .field-display:hover {
-  border-color: var(--border-color);
-  background-color: #f8f9fa;
+  background-color: #f5faff; /* Light blue highlight */
+  border: 1px dashed var(--primary-color); /* Dashed border to indicate editability */
 }
 
-.field-display.editing {
-  display: none;
-}
-
+/* The actual textarea for editing */
 .field-edit {
   width: 100%;
+  box-sizing: border-box;
   border: 1px solid var(--primary-color);
-  border-radius: 3px;
-  padding: 4px;
+  border-radius: 4px;
+  padding: 8px 6px;
   font-family: var(--font-family);
   font-size: 1rem;
   line-height: 1.4;
   resize: none;
   overflow-y: hidden;
+  display: none; /* Hidden by default */
 }
 
+/* The clickable links inside the display div */
 .directive-link {
   color: var(--primary-color);
   text-decoration: underline;
@@ -400,17 +401,10 @@
 
 .directive-link:hover {
   color: #357abd;
-  text-decoration: none;
 }
 
 .directive-link:visited {
   color: #6f42c1;
-}
-
-/* Ensure proper spacing for editable fields */
-#directive-list-results .results-table td.editable-field-container {
-  padding: 8px;
-  vertical-align: top;
 }
   
     /* --- Tab Navigation --- */
@@ -576,23 +570,48 @@
   #directive-list-results .results-table th:nth-child(10) { width: 110px; } /* Day's Lapsed */
   #directive-list-results .results-table th:nth-child(11) { width: 90px;  } /* Action */
 
-  /* This is the key fix for the expanding textareas in the table */
-  #directive-list-results .results-table td textarea {
-    width: 100%;
-    box-sizing: border-box;
-    display: block; /* Ensures it behaves correctly within the cell */
-    border: none;
-    background-color: transparent;
-    padding: 0;
-    margin: 0;
-    font-family: var(--font-family); /* Inherit font */
-    font-size: 1rem; /* Inherit font size */
-    line-height: 1.4; /* Inherit line height */
-    min-height: 24px;
-  }
+/* Styling for textareas in the directive list to match other inputs */
+#directive-list-results .results-table td {
+  vertical-align: top;
+}
 
-  #directive-list-results .results-table td textarea:focus {
-    outline: none;
-    background-color: #f0f8ff;
-  }
+/* --- Input Validation Highlighting --- */
+.input-error {
+border: 1.5px solid var(--error-color) !important;
+}
+
+.input-success {
+border: 1.5px solid var(--success-color) !important;
+}
+
+/* --- HH ID Copy Button --- */
+.hh-id-cell-content {
+display: flex;
+align-items: center;
+justify-content: space-between;
+gap: 8px;
+width: 100%; /* Ensure it fills the cell */
+}
+.hh-id-value {
+flex-grow: 1; /* Allow the ID to take up space */
+}
+
+.copy-btn {
+padding: 3px 8px;
+font-size: 0.75rem;
+line-height: 1.2;
+cursor: pointer;
+border: 1px solid #b0b0b0;
+background-color: #f0f0f0;
+border-radius: 4px;
+color: #333;
+font-weight: normal;
+text-transform: none;
+letter-spacing: 0;
+flex-shrink: 0; /* Prevent button from shrinking */
+}
+.copy-btn:hover {
+background-color: #e2e2e2;
+border-color: #999;
+}
 </style>
