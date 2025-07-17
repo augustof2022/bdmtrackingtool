@@ -30,6 +30,7 @@ const state = {
     // Batch creation listeners
     document.getElementById('add-row-btn').addEventListener('click', addTransactionRow);
     document.getElementById('submit-batch-btn').addEventListener('click', handleSubmitBatch);
+    document.getElementById('data-matching-toggle').addEventListener('change', handleDataMatchingToggle);
 
     // Tab navigation listener (targets all tab navigations)
     document.querySelectorAll('.tab-nav').forEach(nav => nav.addEventListener('click', handleTabSwitch));
@@ -319,6 +320,7 @@ const state = {
         // Re-attach listeners for the new buttons
         document.getElementById('add-row-btn').addEventListener('click', addTransactionRow);
         document.getElementById('submit-batch-btn').addEventListener('click', handleSubmitBatch);
+        document.getElementById('data-matching-toggle').addEventListener('change', handleDataMatchingToggle);
 
         addTransactionRow();
         makeTableResizable(document.getElementById('transaction-table'));
@@ -336,12 +338,27 @@ function addTransactionRow() {
     const newRow = tableBody.insertRow();
     const batchNo = document.getElementById('batch-id-display').textContent;
     
-    // The sequence is the new number of rows (1-based)
     const sequence = (tableBody.rows.length).toString().padStart(2, '0');
     const transactionId = `${batchNo}-${sequence}`;
 
-    // Generate options for the Update Type dropdown from our new data structure
     const updateTypeOptions = state.dropdownOptions.updateTypeTemplates.map(t => t.updateType);
+
+    const isAutomated = document.getElementById('data-matching-toggle').checked;
+
+    let granteeNameInput, entryIdInput, memberNameInput;
+
+    if (isAutomated) {
+      granteeNameInput = `<input type="text" class="grantee-name" readonly placeholder="Auto-filled">`;
+      entryIdInput = `<input type="text" class="entry-id" readonly placeholder="Auto-filled">`;
+      memberNameInput = `<div class="input-with-icon">
+          <select class="member-name" disabled><option value="">-- Enter HH ID First --</option></select>
+          <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
+      </div>`;
+    } else {
+      granteeNameInput = `<input type="text" class="grantee-name" placeholder="Manual Input">`;
+      entryIdInput = `<input type="text" class="entry-id" placeholder="Manual Input">`;
+      memberNameInput = `<input type="text" class="member-name" placeholder="Manual Input">`;
+    }
 
     newRow.innerHTML = `
       <td><button class="remove-row-btn" onclick="removeTransactionRow(this)">-</button></td>
@@ -350,12 +367,9 @@ function addTransactionRow() {
           <input type="text" class="hh-id" placeholder="Enter HH ID">
           <svg class="duplicate-icon hh-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
       </div></td>
-      <td><input type="text" class="grantee-name" readonly placeholder="Auto-filled"></td>
-      <td><input type="text" class="entry-id" readonly placeholder="Auto-filled"></td>
-      <td><div class="input-with-icon">
-          <select class="member-name" disabled><option value="">-- Enter HH ID First --</option></select>
-          <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
-      </div></td>
+      <td>${granteeNameInput}</td>
+      <td>${entryIdInput}</td>
+      <td>${memberNameInput}</td>
       <td><select class="update-type">${generateSelectOptions(updateTypeOptions)}</select></td>
       <td class="new-value-cell" data-field-name="NEW_VALUE"><span class="placeholder-text">Select an Update Type</span></td>
       <td><select class="req-status">${generateSelectOptions(['Complete', 'Incomplete', 'N/A'])}</select></td>
@@ -363,40 +377,8 @@ function addTransactionRow() {
       <td><textarea class="validation" rows="1" placeholder="Input Validation"></textarea></td>
       <td><textarea class="recommendation" rows="1" placeholder="Input recommendation"></textarea></td>
     `;
-
-    // --- FEATURE 2: Validation Feedback Handler ---
-    const validationFeedbackHandler = (event) => {
-        const element = event.target;
-        if (element.value) {
-            element.classList.remove('input-error');
-            element.classList.add('input-success');
-        } else {
-            element.classList.remove('input-success');
-        }
-    };
     
-    // Add event listeners for the main workflow
-    const hhIdInput = newRow.querySelector('.hh-id');
-    hhIdInput.addEventListener('blur', handleHhIdBlurForRow);
-    hhIdInput.addEventListener('input', validationFeedbackHandler);
-
-    const memberSelect = newRow.querySelector('.member-name');
-    memberSelect.addEventListener('change', handleMemberSelection);
-    memberSelect.addEventListener('change', validationFeedbackHandler);
-    
-    const updateTypeSelect = newRow.querySelector('.update-type');
-    updateTypeSelect.addEventListener('change', handleUpdateTypeChange);
-    updateTypeSelect.addEventListener('change', validationFeedbackHandler);
-    
-    newRow.querySelector('.hh-duplicate').addEventListener('click', duplicateRowByHousehold);
-    newRow.querySelector('.member-duplicate').addEventListener('click', duplicateRowByMember);
-    
-    // Auto-resize textareas in the new row
-    const textareas = newRow.querySelectorAll('textarea');
-    textareas.forEach(textarea => {
-      textarea.addEventListener('input', () => autoResizeTextarea(textarea));
-      autoResizeTextarea(textarea); // Set initial size
-    });
+    attachRowEventListeners(newRow);
   }
 
   function removeTransactionRow(button) {
@@ -414,7 +396,11 @@ function addTransactionRow() {
     });
   }
 
-  function handleHhIdBlurForRow(event) {
+function handleHhIdBlurForRow(event) {
+    // If auto-matching is disabled, do nothing.
+    const isAutomated = document.getElementById('data-matching-toggle').checked;
+    if (!isAutomated) return;
+
     const hhIdInput = event.target;
     const row = hhIdInput.closest('tr');
     const granteeNameInput = row.querySelector('.grantee-name');
@@ -433,13 +419,9 @@ function addTransactionRow() {
       google.script.run
         .withSuccessHandler(data => {
           if (data && data.members && data.members.length > 0) {
-            // Store the data on the row for later use
             row.dataset.householdData = JSON.stringify(data.members);
-            
             granteeNameInput.value = data.granteeName || 'N/A';
             
-            // Populate the member dropdown
-            memberNameSelect.innerHTML = ''; // Clear loading message
             let optionsHtml = '<option value="" disabled selected>-- Please Select --</option>';
             data.members.forEach(member => {
               optionsHtml += `<option value="${member.memberName}">${member.memberName}</option>`;
@@ -590,14 +572,11 @@ function handleSubmitBatch() {
     return;
   }
   
-  // Helper to reconstruct the NEW_VALUE string from the mini-form
   const reconstructNewValueFromMiniForm = (row) => {
     const cell = row.querySelector('.new-value-cell');
     if (!cell) return '';
-
     const valueParts = [];
     const formRows = cell.querySelectorAll('div');
-
     formRows.forEach(formRow => {
       const label = formRow.querySelector('label');
       const input = formRow.querySelector('input[type="text"]');
@@ -612,10 +591,12 @@ function handleSubmitBatch() {
   rows.forEach((row, index) => {
     row.style.backgroundColor = '';
     
+    // Selectors now account for both automated and manual input classes
     const inputs = {
       hhId: row.querySelector('.hh-id'),
       granteeName: row.querySelector('.grantee-name'),
       memberName: row.querySelector('.member-name'),
+      entryId: row.querySelector('.entry-id'),
       updateType: row.querySelector('.update-type'),
       requirementsStatus: row.querySelector('.req-status'),
       attachments: row.querySelector('.attachments'),
@@ -623,7 +604,6 @@ function handleSubmitBatch() {
       recommendation: row.querySelector('.recommendation')
     };
 
-    // Clear previous validation styles
     Object.values(inputs).forEach(input => {
       if (input) input.classList.remove('input-error', 'input-success');
     });
@@ -633,21 +613,22 @@ function handleSubmitBatch() {
       transactionId: row.querySelector('.transaction-id').value,
       hhId: inputs.hhId.value,
       granteeName: inputs.granteeName.value,
-      entryId: row.querySelector('.entry-id').value,
+      entryId: inputs.entryId.value,
       memberName: inputs.memberName.value,
       updateType: inputs.updateType.value,
-      newValue: reconstructNewValueFromMiniForm(row), // Use helper to build the string
+      newValue: reconstructNewValueFromMiniForm(row),
       requirementsStatus: inputs.requirementsStatus.value,
       attachments: inputs.attachments.value,
       validation: inputs.validation.value,
       recommendation: inputs.recommendation.value
     };
 
+    const isAutomated = document.getElementById('data-matching-toggle').checked;
     const dynamicRequiredFields = JSON.parse(row.dataset.requiredFields || '[]');
     let rowIsValid = true;
 
-    // Validate fixed fields
-    if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
+    // Validate HH ID and grantee name (grantee check only matters for automated mode)
+    if (!transaction.hhId || (isAutomated && (transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error'))) {
       inputs.hhId.classList.add('input-error');
       rowIsValid = false;
     } else {
@@ -660,8 +641,17 @@ function handleSubmitBatch() {
     } else {
       inputs.updateType.classList.add('input-success');
     }
+    
+    // Now validate the other required fields, including the manually entered ones.
+    if (!isAutomated) {
+        if (!transaction.granteeName) {
+            inputs.granteeName.classList.add('input-error');
+            rowIsValid = false;
+        } else {
+            inputs.granteeName.classList.add('input-success');
+        }
+    }
 
-    // Validate dynamic required fields
     const fieldToInputMapping = {
       'MEMBER_NAME': { input: inputs.memberName, value: transaction.memberName },
       'ATTACHMENTS': { input: inputs.attachments, value: transaction.attachments },
@@ -2076,5 +2066,97 @@ function handleDirectiveListActions(event) {
       })
       .saveOrUpdateDirective(directiveData, state.currentUser);
   }
+}
+
+/**
+ * Attaches all necessary event listeners to a newly created transaction row.
+ * @param {HTMLTableRowElement} row The row to attach listeners to.
+ */
+function attachRowEventListeners(row) {
+    const validationFeedbackHandler = (event) => {
+        const element = event.target;
+        if (element.value) {
+            element.classList.remove('input-error');
+            element.classList.add('input-success');
+        } else {
+            element.classList.remove('input-success');
+        }
+    };
+    
+    const hhIdInput = row.querySelector('.hh-id');
+    hhIdInput.addEventListener('blur', handleHhIdBlurForRow);
+    hhIdInput.addEventListener('input', validationFeedbackHandler);
+
+    const memberSelect = row.querySelector('select.member-name');
+    if (memberSelect) {
+      memberSelect.addEventListener('change', handleMemberSelection);
+      memberSelect.addEventListener('change', validationFeedbackHandler);
+    }
+    
+    const updateTypeSelect = row.querySelector('.update-type');
+    updateTypeSelect.addEventListener('change', handleUpdateTypeChange);
+    updateTypeSelect.addEventListener('change', validationFeedbackHandler);
+    
+    row.querySelector('.hh-duplicate').addEventListener('click', duplicateRowByHousehold);
+    
+    const memberDuplicateBtn = row.querySelector('.member-duplicate');
+    if (memberDuplicateBtn) {
+      memberDuplicateBtn.addEventListener('click', duplicateRowByMember);
+    }
+    
+    row.querySelectorAll('textarea').forEach(textarea => {
+      textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+      autoResizeTextarea(textarea);
+    });
+}
+
+/**
+ * Handles the toggling of the Automated Data Matching switch.
+ * It converts all existing rows in the table to the selected mode.
+ */
+function handleDataMatchingToggle(event) {
+  const isAutomated = event.target.checked;
+  const tableBody = document.getElementById('transaction-table-body');
+  const rows = tableBody.querySelectorAll('tr');
+
+  rows.forEach(row => {
+    // Preserve current values before changing the structure
+    const hhIdValue = row.querySelector('.hh-id').value;
+    const granteeValue = row.querySelector('.grantee-name').value;
+    const entryIdValue = row.querySelector('.entry-id').value;
+    const memberValue = row.querySelector('.member-name').value;
+
+    // Get references to the cells that will be changed
+    const granteeCell = row.cells[3];
+    const entryIdCell = row.cells[4];
+    const memberCell = row.cells[5];
+
+    if (isAutomated) {
+      // Switching TO Automated Mode
+      granteeCell.innerHTML = `<input type="text" class="grantee-name" readonly placeholder="Auto-filled">`;
+      entryIdCell.innerHTML = `<input type="text" class="entry-id" readonly placeholder="Auto-filled">`;
+      memberCell.innerHTML = `<div class="input-with-icon">
+          <select class="member-name" disabled><option value="">-- Enter HH ID First --</option></select>
+          <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
+      </div>`;
+      
+      // Re-attach listeners for the new elements
+      const memberSelect = memberCell.querySelector('select.member-name');
+      memberSelect.addEventListener('change', handleMemberSelection);
+      memberSelect.addEventListener('change', (e) => e.target.classList.add('input-success'));
+      memberCell.querySelector('.member-duplicate').addEventListener('click', duplicateRowByMember);
+
+      // Trigger the data fetch to populate the new automated fields
+      if (hhIdValue) {
+        row.querySelector('.hh-id').dispatchEvent(new Event('blur'));
+      }
+      
+    } else {
+      // Switching TO Manual Mode
+      granteeCell.innerHTML = `<input type="text" class="grantee-name" placeholder="Manual Input" value="${granteeValue || ''}">`;
+      entryIdCell.innerHTML = `<input type="text" class="entry-id" placeholder="Manual Input" value="${entryIdValue || ''}">`;
+      memberCell.innerHTML = `<input type="text" class="member-name" placeholder="Manual Input" value="${memberValue || ''}">`;
+    }
+  });
 }
 </script>
