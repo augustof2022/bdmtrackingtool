@@ -584,6 +584,29 @@ border: 1.5px solid var(--error-color) !important;
 border: 1.5px solid var(--success-color) !important;
 }
 
+/* --- Required Field Indicators --- */
+.required-field {
+  border-left: 3px solid var(--error-color) !important;
+}
+
+.required-indicator {
+  color: var(--error-color);
+  font-weight: bold;
+  margin-left: 2px;
+}
+
+/* --- Enhanced validation styling --- */
+.input-error.required-field {
+  border: 1.5px solid var(--error-color) !important;
+  border-left: 3px solid var(--error-color) !important;
+  background-color: #fff5f5;
+}
+
+.input-success.required-field {
+  border: 1.5px solid var(--success-color) !important;
+  border-left: 3px solid var(--success-color) !important;
+}
+
 /* --- HH ID Copy Button --- */
 .hh-id-cell-content {
 display: flex;
