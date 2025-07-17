@@ -454,119 +454,210 @@ const state = {
     }
   }
 
-  function handleUpdateTypeChange(event) {
-    const select = event.target;
-    const row = select.closest('tr');
-    const selectedType = select.value;
+function handleUpdateTypeChange(event) {
+  const select = event.target;
+  const row = select.closest('tr');
+  const selectedType = select.value;
 
-    const newValueEl = row.querySelector('.new-value');
+  const newValueEl = row.querySelector('.new-value');
 
-    // Find the template object from our state
-    const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
+  // Find the template object from our state
+  const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
 
-    if (template) {
-      // The old fields are gone, but we still populate the new value if there's a template for it.
-      newValueEl.value = template.newValueTemplate || '';
-    } else {
-      // Clear fields if no template is found (e.g., placeholder selected)
-      newValueEl.value = '';
-    }
-
-    // Programmatically dispatch an 'input' event to trigger auto-resizing.
-    setTimeout(() => {
-        const inputEvent = new Event('input', { bubbles: true });
-        newValueEl.dispatchEvent(inputEvent);
-    }, 0);
+  if (template) {
+    // Populate the new value if there's a template for it
+    newValueEl.value = template.newValueTemplate || '';
+    
+    // Store the required fields for this update type on the row
+    row.dataset.requiredFields = JSON.stringify(template.requiredFields || []);
+  } else {
+    // Clear fields if no template is found
+    newValueEl.value = '';
+    row.dataset.requiredFields = JSON.stringify([]);
   }
 
-  function handleSubmitBatch() {
-    const batchNo = document.getElementById('batch-id-display').textContent;
-    const tableBody = document.getElementById('transaction-table-body');
-    const rows = tableBody.querySelectorAll('tr');
-    const transactions = [];
+  // Update visual indicators for required fields
+  updateRequiredFieldsVisualIndicators(row);
 
-    if (rows.length === 0) {
-      alert('Please add at least one transaction row.');
-      return;
+  // Programmatically dispatch an 'input' event to trigger auto-resizing
+  setTimeout(() => {
+    const inputEvent = new Event('input', { bubbles: true });
+    newValueEl.dispatchEvent(inputEvent);
+  }, 0);
+}
+
+/**
+ * Updates the visual indicators (styling) for required fields based on the selected update type.
+ * @param {HTMLTableRowElement} row The table row to update.
+ */
+function updateRequiredFieldsVisualIndicators(row) {
+  // Define the mapping of field names to their corresponding CSS classes
+  const fieldMapping = {
+    'NEW_VALUE': '.new-value',
+    'ATTACHMENTS': '.attachments',
+    'VALIDATION': '.validation',
+    'RECOMMENDATION': '.recommendation'
+  };
+
+  // Get the required fields for this row
+  const requiredFields = JSON.parse(row.dataset.requiredFields || '[]');
+  
+  // Reset all dynamic field styling first
+  Object.values(fieldMapping).forEach(selector => {
+    const element = row.querySelector(selector);
+    if (element) {
+      element.classList.remove('required-field');
+      // Remove any existing required indicator
+      const existingIndicator = element.parentNode.querySelector('.required-indicator');
+      if (existingIndicator) {
+        existingIndicator.remove();
+      }
     }
+  });
 
-    let isValid = true;
-    rows.forEach((row, index) => {
-      // --- FEATURE 2: Clear previous styles and get elements ---
-      row.style.backgroundColor = '';
-      const requiredInputs = {
-          hhId: row.querySelector('.hh-id'),
-          memberName: row.querySelector('.member-name'),
-          updateType: row.querySelector('.update-type')
-      };
-      // Clear borders from all of them first
-      Object.values(requiredInputs).forEach(input => {
+  // Apply required styling to the specified fields
+  requiredFields.forEach(fieldName => {
+    const selector = fieldMapping[fieldName];
+    if (selector) {
+      const element = row.querySelector(selector);
+      if (element) {
+        element.classList.add('required-field');
+        // Add visual indicator (red asterisk)
+        const indicator = document.createElement('span');
+        indicator.className = 'required-indicator';
+        indicator.innerHTML = ' *';
+        indicator.style.color = 'var(--error-color)';
+        indicator.style.fontWeight = 'bold';
+        element.parentNode.appendChild(indicator);
+      }
+    }
+  });
+}
+function handleSubmitBatch() {
+  const batchNo = document.getElementById('batch-id-display').textContent;
+  const tableBody = document.getElementById('transaction-table-body');
+  const rows = tableBody.querySelectorAll('tr');
+  const transactions = [];
+
+  if (rows.length === 0) {
+    alert('Please add at least one transaction row.');
+    return;
+  }
+
+  // Define the fixed required fields that are always required
+  const fixedRequiredFields = ['HH_ID_NO', 'GRANTEE_NAME', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS'];
+
+  let isValid = true;
+  rows.forEach((row, index) => {
+    // Clear previous styles
+    row.style.backgroundColor = '';
+    
+    // Get all input elements in the row
+    const inputs = {
+      hhId: row.querySelector('.hh-id'),
+      granteeName: row.querySelector('.grantee-name'),
+      memberName: row.querySelector('.member-name'),
+      updateType: row.querySelector('.update-type'),
+      requirementsStatus: row.querySelector('.req-status'),
+      newValue: row.querySelector('.new-value'),
+      attachments: row.querySelector('.attachments'),
+      validation: row.querySelector('.validation'),
+      recommendation: row.querySelector('.recommendation')
+    };
+
+    // Clear previous validation styles
+    Object.values(inputs).forEach(input => {
+      if (input) {
         input.classList.remove('input-error', 'input-success');
-      });
-      
-      const transaction = {
-        transactionId: row.querySelector('.transaction-id').value,
-        hhId: requiredInputs.hhId.value,
-        granteeName: row.querySelector('.grantee-name').value,
-        entryId: row.querySelector('.entry-id').value,
-        memberName: requiredInputs.memberName.value,
-        updateType: requiredInputs.updateType.value,
-        newValue: row.querySelector('.new-value').value,
-        requirementsStatus: row.querySelector('.req-status').value,
-        attachments: row.querySelector('.attachments').value,
-        validation: row.querySelector('.validation').value,
-        recommendation: row.querySelector('.recommendation').value
-      };
-
-      // --- FEATURE 2: Detailed Validation ---
-      let rowIsValid = true;
-      if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
-        requiredInputs.hhId.classList.add('input-error');
-        rowIsValid = false;
-      } else {
-        requiredInputs.hhId.classList.add('input-success');
       }
-
-      if (!transaction.memberName) {
-        requiredInputs.memberName.classList.add('input-error');
-        rowIsValid = false;
-      } else {
-        requiredInputs.memberName.classList.add('input-success');
-      }
-      
-      if (!transaction.updateType) {
-        requiredInputs.updateType.classList.add('input-error');
-        rowIsValid = false;
-      } else {
-        requiredInputs.updateType.classList.add('input-success');
-      }
-      
-      if (!rowIsValid) {
-        isValid = false;
-        row.style.backgroundColor = '#f9dada'; // Highlight invalid rows
-      }
-
-      transactions.push(transaction);
     });
 
-    if (!isValid) {
-      alert('Please fill out all required fields (marked in red) in the highlighted rows.');
-      return;
+    const transaction = {
+      transactionId: row.querySelector('.transaction-id').value,
+      hhId: inputs.hhId.value,
+      granteeName: inputs.granteeName.value,
+      entryId: row.querySelector('.entry-id').value,
+      memberName: inputs.memberName.value,
+      updateType: inputs.updateType.value,
+      newValue: inputs.newValue.value,
+      requirementsStatus: inputs.requirementsStatus.value,
+      attachments: inputs.attachments.value,
+      validation: inputs.validation.value,
+      recommendation: inputs.recommendation.value
+    };
+
+    // Get dynamic required fields for this row
+    const dynamicRequiredFields = JSON.parse(row.dataset.requiredFields || '[]');
+    
+    let rowIsValid = true;
+
+// Validate fixed required fields
+if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
+  inputs.hhId.classList.add('input-error');
+  rowIsValid = false;
+} else {
+  inputs.hhId.classList.add('input-success');
+}
+
+if (!transaction.updateType) {
+  inputs.updateType.classList.add('input-error');
+  rowIsValid = false;
+} else {
+  inputs.updateType.classList.add('input-success');
+}
+
+if (!transaction.requirementsStatus) {
+  inputs.requirementsStatus.classList.add('input-error');
+  rowIsValid = false;
+} else {
+  inputs.requirementsStatus.classList.add('input-success');
+}
+
+// Validate dynamic required fields
+const fieldToInputMapping = {
+  'MEMBER_NAME': { input: inputs.memberName, value: transaction.memberName },
+  'NEW_VALUE': { input: inputs.newValue, value: transaction.newValue },
+  'ATTACHMENTS': { input: inputs.attachments, value: transaction.attachments },
+  'VALIDATION': { input: inputs.validation, value: transaction.validation },
+  'RECOMMENDATION': { input: inputs.recommendation, value: transaction.recommendation }
+};
+
+    dynamicRequiredFields.forEach(fieldName => {
+      const fieldData = fieldToInputMapping[fieldName];
+      if (fieldData) {
+        if (!fieldData.value || fieldData.value.trim() === '') {
+          fieldData.input.classList.add('input-error');
+          rowIsValid = false;
+        } else {
+          fieldData.input.classList.add('input-success');
+        }
+      }
+    });
+
+    if (!rowIsValid) {
+      isValid = false;
+      row.style.backgroundColor = '#f9dada'; // Highlight invalid rows
     }
 
-    showLoader(true);
-    const batchData = { batchNo, transactions };
-    
-    google.script.run
-      .withSuccessHandler(returnedBatchNo => {
-        showLoader(false);
-        // Instead of an alert, open our new custom modal.
-        openBatchSuccessModal(returnedBatchNo);
-        // The form reset (initializeBatchCreator) is now handled by closeBatchSuccessModal.
-      })
-      .withFailureHandler(handleError)
-      .createTransactionsBatch(batchData, state.currentUser);
+    transactions.push(transaction);
+  });
+
+  if (!isValid) {
+    alert('Please fill out all required fields (marked in red and with *) in the highlighted rows.');
+    return;
   }
+
+  showLoader(true);
+  const batchData = { batchNo, transactions };
+  
+  google.script.run
+    .withSuccessHandler(returnedBatchNo => {
+      showLoader(false);
+      openBatchSuccessModal(returnedBatchNo);
+    })
+    .withFailureHandler(handleError)
+    .createTransactionsBatch(batchData, state.currentUser);
+}
 
   function openBatchSuccessModal(batchNo) {
     document.getElementById('modal-batch-no-display').textContent = batchNo;
