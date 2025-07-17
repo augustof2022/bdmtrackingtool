@@ -1,3 +1,4 @@
+
 <script>
   // --- STATE MANAGEMENT ---
 const state = {
@@ -339,13 +340,33 @@ const state = {
       <td><textarea class="recommendation" rows="1" placeholder="Input recommendation"></textarea></td>
     `;
 
-    // Add event listeners for the new workflow
-    newRow.querySelector('.hh-id').addEventListener('blur', handleHhIdBlurForRow);
-    newRow.querySelector('.member-name').addEventListener('change', handleMemberSelection);
+    // --- FEATURE 2: Validation Feedback Handler ---
+    const validationFeedbackHandler = (event) => {
+        const element = event.target;
+        if (element.value) {
+            element.classList.remove('input-error');
+            element.classList.add('input-success');
+        } else {
+            element.classList.remove('input-success');
+        }
+    };
+    
+    // Add event listeners for the main workflow
+    const hhIdInput = newRow.querySelector('.hh-id');
+    hhIdInput.addEventListener('blur', handleHhIdBlurForRow);
+    hhIdInput.addEventListener('input', validationFeedbackHandler);
+
+    const memberSelect = newRow.querySelector('.member-name');
+    memberSelect.addEventListener('change', handleMemberSelection);
+    memberSelect.addEventListener('change', validationFeedbackHandler);
+    
+    const updateTypeSelect = newRow.querySelector('.update-type');
+    updateTypeSelect.addEventListener('change', handleUpdateTypeChange);
+    updateTypeSelect.addEventListener('change', validationFeedbackHandler);
+    
     newRow.querySelector('.hh-duplicate').addEventListener('click', duplicateRowByHousehold);
     newRow.querySelector('.member-duplicate').addEventListener('click', duplicateRowByMember);
-    // NEW: Add listener for update type change
-    newRow.querySelector('.update-type').addEventListener('change', handleUpdateTypeChange);
+    
     // Auto-resize textareas in the new row
     const textareas = newRow.querySelectorAll('textarea');
     textareas.forEach(textarea => {
@@ -471,14 +492,25 @@ const state = {
 
     let isValid = true;
     rows.forEach((row, index) => {
-      row.style.backgroundColor = ''; // Reset row color
+      // --- FEATURE 2: Clear previous styles and get elements ---
+      row.style.backgroundColor = '';
+      const requiredInputs = {
+          hhId: row.querySelector('.hh-id'),
+          memberName: row.querySelector('.member-name'),
+          updateType: row.querySelector('.update-type')
+      };
+      // Clear borders from all of them first
+      Object.values(requiredInputs).forEach(input => {
+        input.classList.remove('input-error', 'input-success');
+      });
+      
       const transaction = {
         transactionId: row.querySelector('.transaction-id').value,
-        hhId: row.querySelector('.hh-id').value,
+        hhId: requiredInputs.hhId.value,
         granteeName: row.querySelector('.grantee-name').value,
         entryId: row.querySelector('.entry-id').value,
-        memberName: row.querySelector('.member-name').value,
-        updateType: row.querySelector('.update-type').value,
+        memberName: requiredInputs.memberName.value,
+        updateType: requiredInputs.updateType.value,
         newValue: row.querySelector('.new-value').value,
         requirementsStatus: row.querySelector('.req-status').value,
         attachments: row.querySelector('.attachments').value,
@@ -486,16 +518,39 @@ const state = {
         recommendation: row.querySelector('.recommendation').value
       };
 
-      // Basic validation: Check for HH ID, selected member, and a selected update type.
-      if (!transaction.hhId || !transaction.updateType || !transaction.memberName || transaction.granteeName === 'HH ID Not Found') {
+      // --- FEATURE 2: Detailed Validation ---
+      let rowIsValid = true;
+      if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
+        requiredInputs.hhId.classList.add('input-error');
+        rowIsValid = false;
+      } else {
+        requiredInputs.hhId.classList.add('input-success');
+      }
+
+      if (!transaction.memberName) {
+        requiredInputs.memberName.classList.add('input-error');
+        rowIsValid = false;
+      } else {
+        requiredInputs.memberName.classList.add('input-success');
+      }
+      
+      if (!transaction.updateType) {
+        requiredInputs.updateType.classList.add('input-error');
+        rowIsValid = false;
+      } else {
+        requiredInputs.updateType.classList.add('input-success');
+      }
+      
+      if (!rowIsValid) {
         isValid = false;
         row.style.backgroundColor = '#f9dada'; // Highlight invalid rows
       }
+
       transactions.push(transaction);
     });
 
     if (!isValid) {
-      alert('Please fill out all required fields in the highlighted rows. This includes selecting an Update Type.');
+      alert('Please fill out all required fields (marked in red) in the highlighted rows.');
       return;
     }
 
@@ -596,11 +651,22 @@ function renderSearchResults(results) {
       displayHeaders.forEach(header => {
         const value = row[header];
         let displayValue = (value === null || value === undefined) ? '' : value;
+        
         if (header.toLowerCase().includes('date') && displayValue) {
             const d = new Date(displayValue);
             if (!isNaN(d.getTime())) displayValue = d.toLocaleString();
         }
-        tableHtml += `<td>${displayValue}</td>`;
+        
+        if (header === 'HH_ID_NO') {
+          tableHtml += `<td>
+                          <div class="hh-id-cell-content">
+                            <span class="hh-id-value">${displayValue}</span>
+                            <button class="btn copy-btn" data-hh-id="${displayValue}">Copy</button>
+                          </div>
+                        </td>`;
+        } else {
+          tableHtml += `<td>${displayValue}</td>`;
+        }
       });
       
       const formattedDateStatusChanged = row.DATE_STATUS_CHANGED ? new Date(row.DATE_STATUS_CHANGED).toLocaleString() : '';
@@ -618,7 +684,32 @@ function renderSearchResults(results) {
 
     container.innerHTML = tableHtml + '</tbody></table>';
 
-    // Activate interactive elements after rendering
+    // Activate interactive elements after rendering using event delegation
+    container.addEventListener('click', function(event) {
+        // Handle copy button clicks
+        if (event.target.classList.contains('copy-btn')) {
+            const button = event.target;
+            const hhId = button.dataset.hhId;
+            navigator.clipboard.writeText(hhId).then(() => {
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                button.disabled = true;
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.disabled = false;
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy ID:', err);
+                alert('Failed to copy ID.');
+            });
+        }
+        // Handle save button clicks
+        else if (event.target.classList.contains('save-status-btn')) {
+            handleStatusSave(event);
+        }
+    });
+
+    // Add listeners for inputs that enable the save buttons
     container.querySelectorAll('.results-table tbody tr').forEach(row => {
       const statusDropdown = row.querySelector('.status-dropdown');
       const remarksInput = row.querySelector('.remarks-input');
@@ -628,11 +719,8 @@ function renderSearchResults(results) {
         toggleSaveButtonState(row);
         autoResizeTextarea(remarksInput); // Resize as user types
       });
-      
-      row.querySelector('.save-status-btn').addEventListener('click', handleStatusSave);
     });
 
-    // --- THIS IS THE FIX ---
     // Wait for the browser to render the new table, then resize all textareas.
     setTimeout(() => {
       container.querySelectorAll('textarea.remarks-input').forEach(textarea => {
@@ -1604,6 +1692,7 @@ function fetchAndRenderDirectives(criteria) {
     .getDirectives(criteria);
 }
 
+
 /**
  * Renders the list of directives in an editable table.
  * @param {Array<object>} directives The array of directive objects from the server.
@@ -1628,6 +1717,12 @@ function renderDirectivesList(directives) {
     if (dir.DAYS_LAPSED >= 20) daysLapsedClass = 'days-lapsed-red';
     else if (dir.DAYS_LAPSED >= 10) daysLapsedClass = 'days-lapsed-yellow';
     
+    // We need the raw value for the textarea and the HTML-rendered value for the div.
+    const rawDetails = dir.DETAILS || '';
+    const renderedDetails = convertTextToClickableLinks(rawDetails);
+    const rawRemarks = dir.REMARKS || '';
+    const renderedRemarks = convertTextToClickableLinks(rawRemarks);
+
     tableHtml += `<tr data-directive-id="${dir.DIRECTIVE_ID}">
       <td><input type="text" class="dir-list-hh-id" value="${dir.HOUSEHOLD_ID || ''}"></td>
       <td><input type="text" class="dir-list-grantee-name" value="${dir.GRANTEE_NAME || ''}"></td>
@@ -1635,14 +1730,14 @@ function renderDirectivesList(directives) {
       <td><select class="dir-list-type">${generateSelectOptions(directiveTypes, dir.DIRECTIVE_TYPE, false)}</select></td>
       <td><input type="date" class="dir-list-date-endorsed" value="${endorsedDate}"></td>
       <td class="editable-field-container">
-        <div class="field-display dir-list-details-display" data-field="details">${convertTextToClickableLinks(dir.DETAILS || '')}</div>
-        <textarea class="field-edit dir-list-details" rows="1" style="display: none;">${dir.DETAILS || ''}</textarea>
+        <div class="field-display dir-list-details-display">${renderedDetails}</div>
+        <textarea class="field-edit dir-list-details" rows="1">${rawDetails}</textarea>
       </td>
       <td><select class="dir-list-status">${generateSelectOptions(directiveStatuses, dir.CURRENT_STATUS, false)}</select></td>
       <td><select class="dir-list-case-manager">${generateSelectOptions(caseManagers, dir.CASE_MANAGER, false)}</select></td>
       <td class="editable-field-container">
-        <div class="field-display dir-list-remarks-display" data-field="remarks">${convertTextToClickableLinks(dir.REMARKS || '')}</div>
-        <textarea class="field-edit dir-list-remarks" rows="1" style="display: none;">${dir.REMARKS || ''}</textarea>
+        <div class="field-display dir-list-remarks-display">${renderedRemarks}</div>
+        <textarea class="field-edit dir-list-remarks" rows="1">${rawRemarks}</textarea>
       </td>
       <td class="${daysLapsedClass}">${dir.DAYS_LAPSED}</td>
       <td><button class="btn btn-primary update-directive-btn" disabled>Save</button></td>
@@ -1655,9 +1750,6 @@ function renderDirectivesList(directives) {
   container.querySelectorAll('tr[data-directive-id]').forEach(row => {
     // Regular input change listeners
     row.addEventListener('input', (event) => {
-      // Skip if this is coming from our editable field system
-      if (event.target.classList.contains('field-edit')) return;
-      
       const saveBtn = row.querySelector('.update-directive-btn');
       saveBtn.disabled = false;
       saveBtn.classList.remove('btn-success');
@@ -1714,7 +1806,7 @@ function setupEditableField(row, displaySelector, editSelector) {
   
   // Click to edit
   displayElement.addEventListener('click', (e) => {
-    // Don't switch to edit mode if clicking on a link
+    // Don't switch to edit mode if clicking on an actual link
     if (e.target.tagName.toLowerCase() === 'a') {
       return;
     }
@@ -1725,38 +1817,33 @@ function setupEditableField(row, displaySelector, editSelector) {
     autoResizeTextarea(editElement);
   });
   
-  // Save on blur or Enter key
+  // A function to save the edit and switch back to display mode
   const saveEdit = () => {
     const newValue = editElement.value;
     displayElement.innerHTML = convertTextToClickableLinks(newValue);
-    displayElement.style.display = 'block';
     editElement.style.display = 'none';
+    displayElement.style.display = 'block';
     
-    // Trigger change event to enable save button
-    const saveBtn = row.querySelector('.update-directive-btn');
-    saveBtn.disabled = false;
-    saveBtn.classList.remove('btn-success');
-    saveBtn.classList.add('btn-actionable');
-    saveBtn.textContent = 'Save';
+    // Manually trigger an input event on the row to enable the save button
+    row.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
   };
   
+  // Save when the textarea loses focus
   editElement.addEventListener('blur', saveEdit);
   
+  // Also save on Enter, but allow Shift+Enter for new lines
   editElement.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       saveEdit();
     }
     if (e.key === 'Escape') {
-      // Cancel edit - restore original value
-      editElement.value = displayElement.textContent.replace(/<br>/g, '\n');
-      displayElement.style.display = 'block';
+      // Cancel edit - restore original value and switch back
+      editElement.value = displayElement.textContent; // Use textContent to get un-rendered value
       editElement.style.display = 'none';
+      displayElement.style.display = 'block';
     }
   });
-  
-  // Auto-resize on input
-  editElement.addEventListener('input', () => autoResizeTextarea(editElement));
 }
 
 /**
@@ -1770,6 +1857,7 @@ function handleDirectiveListActions(event) {
     const row = button.closest('tr');
     const directiveId = row.dataset.directiveId;
 
+    // IMPORTANT: Read the value from the hidden textarea for details/remarks, not the display div.
     const directiveData = {
       DIRECTIVE_ID: directiveId,
       HOUSEHOLD_ID: row.querySelector('.dir-list-hh-id').value,
@@ -1777,10 +1865,10 @@ function handleDirectiveListActions(event) {
       MEMBER_NAME: row.querySelector('.dir-list-member-name').value,
       DIRECTIVE_TYPE: row.querySelector('.dir-list-type').value,
       DATE_ENDORSED: row.querySelector('.dir-list-date-endorsed').value,
-      DETAILS: row.querySelector('.dir-list-details').value,
+      DETAILS: row.querySelector('.dir-list-details').value, // Reads from the hidden textarea
       CURRENT_STATUS: row.querySelector('.dir-list-status').value,
-      CASE_MANAGER: row.querySelector('.dir-list-case-manager').value, // ADDED
-      REMARKS: row.querySelector('.dir-list-remarks').value
+      CASE_MANAGER: row.querySelector('.dir-list-case-manager').value,
+      REMARKS: row.querySelector('.dir-list-remarks').value // Reads from the hidden textarea
     };
 
     showLoader(true);
@@ -1791,17 +1879,25 @@ function handleDirectiveListActions(event) {
       .withSuccessHandler(response => {
         showLoader(false);
         if (response.success) {
-          button.classList.remove('btn-actionable');
-          button.classList.add('btn-success');
-          button.textContent = 'Saved!';
-          // Re-disable after a delay
-          setTimeout(() => {
-            button.disabled = true;
-            button.classList.remove('btn-success');
-            button.textContent = 'Save';
-          }, 2500);
+            // Handle the new "no changes" message gracefully
+            if (response.message && response.message.includes('No changes detected')) {
+                button.disabled = true;
+                button.classList.remove('btn-actionable');
+                button.textContent = 'Save'; // Reset button text
+                alert(response.message); // Inform the user
+            } else {
+                // Handle a successful save
+                button.classList.remove('btn-actionable');
+                button.classList.add('btn-success');
+                button.textContent = 'Saved!';
+                setTimeout(() => {
+                    button.disabled = true;
+                    button.textContent = 'Save';
+                }, 2500);
+            }
         } else {
-          handleError(new Error('Server failed to update directive.'));
+          // Handle cases where the server returns success: false
+          handleError(new Error(response.message || 'Server failed to update directive.'));
           button.disabled = false;
           button.classList.add('btn-actionable');
           button.textContent = 'Save';
