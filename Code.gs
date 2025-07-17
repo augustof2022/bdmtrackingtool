@@ -873,7 +873,7 @@ function generateNewDirectiveId(userInfo) {
 }
 
 /**
- * Saves a new directive or updates an existing one.
+ * Saves a new directive or updates an existing one, logging status changes.
  * @param {object} directiveData The data for the directive.
  * @param {object} userInfo The user performing the action.
  * @returns {object} A result object with success status and the saved data.
@@ -886,44 +886,75 @@ function saveOrUpdateDirective(directiveData, userInfo) {
     const rowIndex = allIds.indexOf(directiveData.DIRECTIVE_ID);
 
     const timestamp = new Date();
+    const userEmail = userInfo.email;
     const userFullName = userInfo.fullName;
 
-    // Convert date string from client to a Date object for the sheet
     const endorsedDate = new Date(directiveData.DATE_ENDORSED);
     if (isNaN(endorsedDate.getTime())) {
       throw new Error("Invalid 'Date Endorsed' value provided.");
     }
-    
-    // This order MUST match the header order in setupSpreadsheet
+
     const rowData = [
-      directiveData.DIRECTIVE_ID,
-      directiveData.HOUSEHOLD_ID,
-      directiveData.GRANTEE_NAME,
-      directiveData.ENTRY_ID,
-      directiveData.MEMBER_NAME,
-      directiveData.DIRECTIVE_TYPE,
-      endorsedDate,
-      directiveData.DETAILS,
-      directiveData.CURRENT_STATUS,
-      directiveData.CASE_MANAGER, // ADDED
-      directiveData.REMARKS,
-      timestamp,
-      userFullName
+      directiveData.DIRECTIVE_ID, directiveData.HOUSEHOLD_ID, directiveData.GRANTEE_NAME,
+      directiveData.ENTRY_ID, directiveData.MEMBER_NAME, directiveData.DIRECTIVE_TYPE,
+      endorsedDate, directiveData.DETAILS, directiveData.CURRENT_STATUS,
+      directiveData.CASE_MANAGER, directiveData.REMARKS, timestamp, userFullName
     ];
-    
+
     if (rowIndex !== -1) {
-      // Update existing row
-      const rowToUpdate = rowIndex + 2; // +1 for 0-based index, +1 for header row
+      // --- UPDATE PATH ---
+      const rowToUpdate = rowIndex + 2;
+      const oldRowData = directivesSheet.getRange(rowToUpdate, 1, 1, headers.length).getValues()[0];
+
+      const oldDataMap = headers.reduce((acc, header, i) => {
+        acc[header] = oldRowData[i];
+        return acc;
+      }, {});
+
+      const oldDateEndorsedStr = (oldDataMap.DATE_ENDORSED instanceof Date) ? oldDataMap.DATE_ENDORSED.toISOString().split('T')[0] : '';
+      
+      const hasChanged = (
+        String(oldDataMap.HOUSEHOLD_ID || '') != String(directiveData.HOUSEHOLD_ID || '') ||
+        String(oldDataMap.GRANTEE_NAME || '') != String(directiveData.GRANTEE_NAME || '') ||
+        String(oldDataMap.MEMBER_NAME || '') != String(directiveData.MEMBER_NAME || '') ||
+        String(oldDataMap.DIRECTIVE_TYPE || '') != String(directiveData.DIRECTIVE_TYPE || '') ||
+        oldDateEndorsedStr != directiveData.DATE_ENDORSED ||
+        String(oldDataMap.DETAILS || '') != String(directiveData.DETAILS || '') ||
+        String(oldDataMap.CURRENT_STATUS || '') != String(directiveData.CURRENT_STATUS || '') ||
+        String(oldDataMap.CASE_MANAGER || '') != String(directiveData.CASE_MANAGER || '') ||
+        String(oldDataMap.REMARKS || '') != String(directiveData.REMARKS || '')
+      );
+
+      if (!hasChanged) {
+        return { success: true, message: 'No changes detected. Nothing was saved.' };
+      }
+
       directivesSheet.getRange(rowToUpdate, 1, 1, rowData.length).setValues([rowData]);
-      logActivity_('UPDATE_DIRECTIVE', `Directive ${directiveData.DIRECTIVE_ID} updated by ${userInfo.email}.`);
+      logActivity_('UPDATE_DIRECTIVE', `Directive ${directiveData.DIRECTIVE_ID} updated by ${userEmail}.`);
+
+      logTransactionHistory_(
+        directiveData.DIRECTIVE_ID,
+        userEmail,
+        oldDataMap.CURRENT_STATUS,
+        directiveData.CURRENT_STATUS,
+        directiveData.REMARKS
+      );
+
     } else {
-      // Append new row
+      // --- CREATE PATH ---
       directivesSheet.appendRow(rowData);
-      logActivity_('CREATE_DIRECTIVE', `New directive ${directiveData.DIRECTIVE_ID} created by ${userInfo.email}.`);
+      logActivity_('CREATE_DIRECTIVE', `New directive ${directiveData.DIRECTIVE_ID} created by ${userEmail}.`);
+
+      logTransactionHistory_(
+        directiveData.DIRECTIVE_ID,
+        userEmail,
+        'Created',
+        directiveData.CURRENT_STATUS,
+        directiveData.REMARKS || 'Initial directive creation.'
+      );
     }
 
-    // Return the data that was saved, including the new field
-    return { success: true, data: directiveData };
+    return { success: true, data: directiveData, message: 'Directive saved successfully.' };
   } catch (e) {
     Logger.log(`Error in saveOrUpdateDirective: ${e}`);
     throw new Error('Failed to save the directive.');
