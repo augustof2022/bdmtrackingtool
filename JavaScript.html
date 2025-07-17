@@ -140,6 +140,30 @@ const state = {
     textarea.style.height = (textarea.scrollHeight) + 'px';
   }
 
+  /**
+   * Formats the raw NEW_VALUE string from the spreadsheet for display.
+   * Finds the first colon, and wraps the rest of the line in <strong> tags.
+   * @param {string} text The raw multi-line text.
+   * @returns {string} An HTML string with formatted lines separated by <br>.
+   */
+  function formatNewValueForDisplay(text) {
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+
+    return text.split('\n').map(line => {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex > -1) {
+        const label = line.substring(0, colonIndex + 1);
+        const value = line.substring(colonIndex + 1).trim();
+        // Return the line with the value part bolded
+        return `${label} <strong>${value}</strong>`;
+      }
+      // If no colon, return the line as is (e.g., an instructional line)
+      return line;
+    }).join('<br>');
+  }
+
   // --- AUTHENTICATION HANDLERS ---
   function handleLogin(event) {
     event.preventDefault();
@@ -307,7 +331,7 @@ const state = {
       .generateNewBatchNo(state.currentUser);
   }
 
-  function addTransactionRow() {
+function addTransactionRow() {
     const tableBody = document.getElementById('transaction-table-body');
     const newRow = tableBody.insertRow();
     const batchNo = document.getElementById('batch-id-display').textContent;
@@ -333,7 +357,7 @@ const state = {
           <svg class="duplicate-icon member-duplicate" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM20 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H20C21.1 23 22 22.1 22 21V7C22 5.9 21.1 5 20 5ZM20 21H8V7H20V21Z"/></svg>
       </div></td>
       <td><select class="update-type">${generateSelectOptions(updateTypeOptions)}</select></td>
-      <td><textarea class="new-value" rows="1" placeholder="Auto-filled from Update Type"></textarea></td>
+      <td class="new-value-cell" data-field-name="NEW_VALUE"><span class="placeholder-text">Select an Update Type</span></td>
       <td><select class="req-status">${generateSelectOptions(['Complete', 'Incomplete', 'N/A'])}</select></td>
       <td><textarea class="attachments" rows="1" placeholder="List of attached documents and Document link or photo scanned links"></textarea></td>
       <td><textarea class="validation" rows="1" placeholder="Input Validation"></textarea></td>
@@ -454,37 +478,59 @@ const state = {
     }
   }
 
-function handleUpdateTypeChange(event) {
-  const select = event.target;
-  const row = select.closest('tr');
-  const selectedType = select.value;
+  function handleUpdateTypeChange(event) {
+    const select = event.target;
+    const row = select.closest('tr');
+    const selectedType = select.value;
+    const newValueCell = row.querySelector('.new-value-cell');
 
-  const newValueEl = row.querySelector('.new-value');
+    // Clear the cell first
+    newValueCell.innerHTML = '';
 
-  // Find the template object from our state
-  const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
+    const template = state.dropdownOptions.updateTypeTemplates.find(t => t.updateType === selectedType);
 
-  if (template) {
-    // Populate the new value if there's a template for it
-    newValueEl.value = template.newValueTemplate || '';
-    
-    // Store the required fields for this update type on the row
-    row.dataset.requiredFields = JSON.stringify(template.requiredFields || []);
-  } else {
-    // Clear fields if no template is found
-    newValueEl.value = '';
-    row.dataset.requiredFields = JSON.stringify([]);
+    if (template && template.newValueTemplate) {
+      const templateLines = template.newValueTemplate.split('\n').filter(line => line.trim() !== '');
+
+      templateLines.forEach(line => {
+        const formRowDiv = document.createElement('div');
+        const colonIndex = line.indexOf(':');
+
+        if (colonIndex > -1) {
+          // This is a label-input pair
+          const labelText = line.substring(0, colonIndex + 1);
+          const prefillText = line.substring(colonIndex + 1).trim();
+
+          const label = document.createElement('label');
+          label.textContent = labelText;
+
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = prefillText; // Use template for pre-filling if needed
+
+          formRowDiv.appendChild(label);
+          formRowDiv.appendChild(input);
+        } else {
+          // This is an instructional line
+          const instruction = document.createElement('span');
+          instruction.className = 'instruction-text';
+          instruction.textContent = line;
+          formRowDiv.appendChild(instruction);
+        }
+        newValueCell.appendChild(formRowDiv);
+      });
+      
+      // Store required fields on the row for validation
+      row.dataset.requiredFields = JSON.stringify(template.requiredFields || []);
+    } else {
+      // If no template, or template is empty, show a placeholder and clear required fields
+      newValueCell.innerHTML = '<span class="placeholder-text">Not applicable</span>';
+      row.dataset.requiredFields = JSON.stringify([]);
+    }
+
+    // Update visual indicators for all fields on this row
+    updateRequiredFieldsVisualIndicators(row);
   }
-
-  // Update visual indicators for required fields
-  updateRequiredFieldsVisualIndicators(row);
-
-  // Programmatically dispatch an 'input' event to trigger auto-resizing
-  setTimeout(() => {
-    const inputEvent = new Event('input', { bubbles: true });
-    newValueEl.dispatchEvent(inputEvent);
-  }, 0);
-}
 
 /**
  * Updates the visual indicators (styling) for required fields based on the selected update type.
@@ -543,23 +589,35 @@ function handleSubmitBatch() {
     alert('Please add at least one transaction row.');
     return;
   }
+  
+  // Helper to reconstruct the NEW_VALUE string from the mini-form
+  const reconstructNewValueFromMiniForm = (row) => {
+    const cell = row.querySelector('.new-value-cell');
+    if (!cell) return '';
 
-  // Define the fixed required fields that are always required
-  const fixedRequiredFields = ['HH_ID_NO', 'GRANTEE_NAME', 'UPDATE_TYPE', 'REQUIREMENTS_STATUS'];
+    const valueParts = [];
+    const formRows = cell.querySelectorAll('div');
+
+    formRows.forEach(formRow => {
+      const label = formRow.querySelector('label');
+      const input = formRow.querySelector('input[type="text"]');
+      if (label && input) {
+        valueParts.push((label.textContent.trim() + ' ' + input.value.trim()).trim());
+      }
+    });
+    return valueParts.join('\n');
+  };
 
   let isValid = true;
   rows.forEach((row, index) => {
-    // Clear previous styles
     row.style.backgroundColor = '';
     
-    // Get all input elements in the row
     const inputs = {
       hhId: row.querySelector('.hh-id'),
       granteeName: row.querySelector('.grantee-name'),
       memberName: row.querySelector('.member-name'),
       updateType: row.querySelector('.update-type'),
       requirementsStatus: row.querySelector('.req-status'),
-      newValue: row.querySelector('.new-value'),
       attachments: row.querySelector('.attachments'),
       validation: row.querySelector('.validation'),
       recommendation: row.querySelector('.recommendation')
@@ -567,10 +625,9 @@ function handleSubmitBatch() {
 
     // Clear previous validation styles
     Object.values(inputs).forEach(input => {
-      if (input) {
-        input.classList.remove('input-error', 'input-success');
-      }
+      if (input) input.classList.remove('input-error', 'input-success');
     });
+    row.querySelectorAll('.new-value-cell input').forEach(input => input.classList.remove('input-error', 'input-success'));
 
     const transaction = {
       transactionId: row.querySelector('.transaction-id').value,
@@ -579,64 +636,70 @@ function handleSubmitBatch() {
       entryId: row.querySelector('.entry-id').value,
       memberName: inputs.memberName.value,
       updateType: inputs.updateType.value,
-      newValue: inputs.newValue.value,
+      newValue: reconstructNewValueFromMiniForm(row), // Use helper to build the string
       requirementsStatus: inputs.requirementsStatus.value,
       attachments: inputs.attachments.value,
       validation: inputs.validation.value,
       recommendation: inputs.recommendation.value
     };
 
-    // Get dynamic required fields for this row
     const dynamicRequiredFields = JSON.parse(row.dataset.requiredFields || '[]');
-    
     let rowIsValid = true;
 
-// Validate fixed required fields
-if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
-  inputs.hhId.classList.add('input-error');
-  rowIsValid = false;
-} else {
-  inputs.hhId.classList.add('input-success');
-}
+    // Validate fixed fields
+    if (!transaction.hhId || transaction.granteeName === 'HH ID Not Found' || transaction.granteeName === 'Error') {
+      inputs.hhId.classList.add('input-error');
+      rowIsValid = false;
+    } else {
+      inputs.hhId.classList.add('input-success');
+    }
 
-if (!transaction.updateType) {
-  inputs.updateType.classList.add('input-error');
-  rowIsValid = false;
-} else {
-  inputs.updateType.classList.add('input-success');
-}
+    if (!transaction.updateType) {
+      inputs.updateType.classList.add('input-error');
+      rowIsValid = false;
+    } else {
+      inputs.updateType.classList.add('input-success');
+    }
 
-if (!transaction.requirementsStatus) {
-  inputs.requirementsStatus.classList.add('input-error');
-  rowIsValid = false;
-} else {
-  inputs.requirementsStatus.classList.add('input-success');
-}
-
-// Validate dynamic required fields
-const fieldToInputMapping = {
-  'MEMBER_NAME': { input: inputs.memberName, value: transaction.memberName },
-  'NEW_VALUE': { input: inputs.newValue, value: transaction.newValue },
-  'ATTACHMENTS': { input: inputs.attachments, value: transaction.attachments },
-  'VALIDATION': { input: inputs.validation, value: transaction.validation },
-  'RECOMMENDATION': { input: inputs.recommendation, value: transaction.recommendation }
-};
+    // Validate dynamic required fields
+    const fieldToInputMapping = {
+      'MEMBER_NAME': { input: inputs.memberName, value: transaction.memberName },
+      'ATTACHMENTS': { input: inputs.attachments, value: transaction.attachments },
+      'VALIDATION': { input: inputs.validation, value: transaction.validation },
+      'RECOMMENDATION': { input: inputs.recommendation, value: transaction.recommendation }
+    };
 
     dynamicRequiredFields.forEach(fieldName => {
-      const fieldData = fieldToInputMapping[fieldName];
-      if (fieldData) {
-        if (!fieldData.value || fieldData.value.trim() === '') {
-          fieldData.input.classList.add('input-error');
-          rowIsValid = false;
-        } else {
-          fieldData.input.classList.add('input-success');
+      if (fieldName === 'NEW_VALUE') {
+        const miniFormInputs = row.querySelectorAll('.new-value-cell input[type="text"]');
+        if (miniFormInputs.length > 0) {
+            let allFilled = true;
+            miniFormInputs.forEach(input => {
+                if (!input.value.trim()) {
+                    allFilled = false;
+                    input.classList.add('input-error');
+                } else {
+                    input.classList.add('input-success');
+                }
+            });
+            if (!allFilled) rowIsValid = false;
+        }
+      } else {
+        const fieldData = fieldToInputMapping[fieldName];
+        if (fieldData) {
+          if (!fieldData.value || fieldData.value.trim() === '') {
+            fieldData.input.classList.add('input-error');
+            rowIsValid = false;
+          } else {
+            fieldData.input.classList.add('input-success');
+          }
         }
       }
     });
 
     if (!rowIsValid) {
       isValid = false;
-      row.style.backgroundColor = '#f9dada'; // Highlight invalid rows
+      row.style.backgroundColor = '#fff2f2';
     }
 
     transactions.push(transaction);
@@ -755,6 +818,8 @@ function renderSearchResults(results) {
                             <button class="btn copy-btn" data-hh-id="${displayValue}">Copy</button>
                           </div>
                         </td>`;
+        } else if (header === 'NEW_VALUE') {
+            tableHtml += `<td>${formatNewValueForDisplay(displayValue)}</td>`;
         } else {
           tableHtml += `<td>${displayValue}</td>`;
         }
@@ -1224,7 +1289,7 @@ function loadMySubmissions() {
       .getSubmittedByUser(state.currentUser);
   }
 
-function renderClSearchResults(results) {
+  function renderClSearchResults(results) {
     const container = document.getElementById('cl-search-results-container');
     if (!results || results.length === 0) {
       container.innerHTML = '<p>No matching transactions found.</p>';
@@ -1269,7 +1334,11 @@ function renderClSearchResults(results) {
           }
         }
         
-        tableHtml += `<td>${displayValue}</td>`;
+        if (header === 'NEW_VALUE') {
+            tableHtml += `<td>${formatNewValueForDisplay(displayValue)}</td>`;
+        } else {
+            tableHtml += `<td>${displayValue}</td>`;
+        }
       });
       tableHtml += `</tr>`;
     });
@@ -1377,7 +1446,7 @@ function toggleRowToEdit(editButton) {
 }
 
   // A generic function to render read-only results for the "My Submissions" tab
-function renderMySubmissions() {
+  function renderMySubmissions() {
       const container = document.getElementById('cl-submitted-container');
       const results = state.mySubmissions;
 
@@ -1429,7 +1498,7 @@ function renderMySubmissions() {
               return; // Continue to next header
             }
 
-            const value = row[header];
+            let value = row[header];
             let displayValue = value === null || value === undefined ? '' : value;
 
             if (header.includes('DATE') && displayValue) {
@@ -1441,6 +1510,10 @@ function renderMySubmissions() {
             if (header === 'CURRENT_STATUS') {
               displayValue = `<span style="font-weight: bold;">${displayValue}</span>`;
             }
+            if (header === 'NEW_VALUE') {
+              displayValue = formatNewValueForDisplay(displayValue);
+            }
+
             tableHtml += `<td>${displayValue}</td>`;
           });
           tableHtml += `</tr>`;
